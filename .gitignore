@@ -1,0 +1,12 @@
+node_modules/
+.venv/
+dist/
+.DS_Store
+*.log
+web-ext-artifacts/
+/.vscode/
+icons/icon-*.png
+*.pyc
+__pycache__/
+/.env
+/.idea/
