@@ -1,0 +1,59 @@
+name: Package Firefox extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.0.0)'
+        required: true
+      name:
+        description: 'Release name (optional)'
+        required: false
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  package:
+    name: Build and publish XPI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine tag and names
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then TAG="${{ github.event.inputs.tag }}"; else TAG="${GITHUB_REF##*/}"; fi
+          NAME="${{ github.event.inputs.name }}"
+          if [ -z "$NAME" ]; then NAME="$TAG"; fi
+          ZIPNAME="FirefoxPriceTracker-${TAG}.xpi"
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "NAME=$NAME" >> $GITHUB_ENV
+          echo "ZIPNAME=$ZIPNAME" >> $GITHUB_ENV
+
+      - name: Ensure zip is available
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: Create XPI package
+        run: |
+          rm -f "$ZIPNAME"
+          zip -r "$ZIPNAME" . -x ".github/*" ".git/*" "README.md" "LICENSE" ".gitignore" ".vscode/*"
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ env.TAG }}
+          release_name: ${{ env.NAME }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload XPI to release
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ env.ZIPNAME }}
+          asset_name: ${{ env.ZIPNAME }}
+          asset_content_type: application/x-xpinstall

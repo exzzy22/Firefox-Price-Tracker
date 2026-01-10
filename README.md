@@ -25,3 +25,26 @@ details. You are free to use, copy, modify, and distribute this software.
 Please retain the copyright and license notice when redistributing or
 publishing derivative works, and include a reference (URL or text) to the
 original source repository so others can find the original project.
+
+## Releases / Installable XPI
+
+This repository includes a GitHub Actions workflow that packages the extension
+as an XPI (Firefox extension archive) and uploads it to a GitHub Release.
+
+How to produce a release artifact on GitHub:
+
+- Create a release tag (for example `v1.0.0`) and push it, or run the
+	"Package Firefox extension" workflow manually from the **Actions** tab and
+	provide a `tag` value.
+- The workflow will create a `FirefoxPriceTracker-<tag>.xpi` release asset.
+
+Installing the XPI locally:
+
+- Download the `.xpi` file from the GitHub Release page.
+- In Firefox, open the menu → Add-ons and themes → Install Add-on From File,
+	then select the downloaded `.xpi`, or drag the `.xpi` into a Firefox window.
+
+Submitting to addons.mozilla.org (AMO):
+
+- AMO accepts `.xpi` uploads for listing your extension. Use the generated
+	`.xpi` from the Release as the file to upload when creating a new listing.
