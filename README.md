@@ -16,8 +16,3 @@ Files:
 - `popup.html`, `popup.js` — popup UI to track and list items
 - `content_script.js` — extracts price and title from the current page
 - `background.js` — periodic checks and notifications
-
-Next steps / improvements:
-- Improve price parsing heuristics for more sites.
-- Provide configurable polling interval in options page.
-- Add history of price changes and charts.
