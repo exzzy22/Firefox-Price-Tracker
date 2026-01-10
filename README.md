@@ -16,3 +16,12 @@ Files:
 - `popup.html`, `popup.js` — popup UI to track and list items
 - `content_script.js` — extracts price and title from the current page
 - `background.js` — periodic checks and notifications
+
+## License
+
+This project is licensed under the MIT License — see the `LICENSE` file for
+details. You are free to use, copy, modify, and distribute this software.
+
+Please retain the copyright and license notice when redistributing or
+publishing derivative works, and include a reference (URL or text) to the
+original source repository so others can find the original project.
