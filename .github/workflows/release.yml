@@ -108,6 +108,45 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
 
+      - name: Update AMO listing (optional)
+        if: ${{ secrets.AMO_API_TOKEN || (secrets.AMO_JWT_ISSUER && secrets.AMO_JWT_SECRET) }}
+        env:
+          AMO_API_TOKEN: ${{ secrets.AMO_API_TOKEN }}
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          echo "Updating AMO listing using release/amo-metadata.json"
+          if [ ! -f release/amo-metadata.json ]; then
+            echo "release/amo-metadata.json not found; skipping AMO update"; exit 0
+          fi
+          SLUG=$(python3 -c "import json,sys;print(json.load(open('release/amo-metadata.json')).get('addon_slug',''))")
+          if [ -z "$SLUG" ]; then echo "addon_slug missing in release/amo-metadata.json; skipping"; exit 0; fi
+          echo "Preparing auth header for AMO"
+          if [ -n "$AMO_API_TOKEN" ]; then
+            AUTH_HEADER="Authorization: Bearer $AMO_API_TOKEN"
+          else
+            echo "No AMO_API_TOKEN found, generating JWT from AMO_JWT_ISSUER/SECRET"
+            python3 -m pip install --quiet PyJWT
+            JWT_TOKEN=$(python3 - <<'PY'
+import os, time, uuid, jwt
+iss = os.environ.get('AMO_JWT_ISSUER')
+secret = os.environ.get('AMO_JWT_SECRET')
+iat = int(time.time())
+payload = {"iss": iss, "jti": str(uuid.uuid4()), "iat": iat, "exp": iat + 60}
+token = jwt.encode(payload, secret, algorithm="HS256")
+if isinstance(token, bytes): token = token.decode('utf-8')
+print(token)
+PY
+)
+            AUTH_HEADER="Authorization: JWT $JWT_TOKEN"
+          fi
+          echo "PATCHing AMO add-on: $SLUG"
+          curl -s -X PATCH "https://addons.mozilla.org/api/v5/addons/addon/$SLUG/" \
+            -H "$AUTH_HEADER" \
+            -H "Content-Type: application/json" \
+            --data-binary @release/amo-metadata.json | tee amo-update.log || true
+          echo "AMO update (tail):"; tail -n 200 amo-update.log || true
+
       - name: Upload ZIP to release
         uses: actions/upload-release-asset@v1
         with:
