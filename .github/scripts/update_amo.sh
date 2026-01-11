@@ -26,7 +26,18 @@ JWT_TOKEN=$(python3 -c "import os,time,uuid,jwt; iss=os.environ.get('AMO_JWT_ISS
 
 echo "JWT generated (not printing token)"
 # Show decoded JWT payload for diagnostics (no secret printed)
-python3 -c "import os,jwt,sys; tok=os.environ.get('JWT_TOKEN');\nif not tok: print('JWT_TOKEN not set'); sys.exit(0);\ntry: payload=jwt.decode(tok, options={'verify_signature': False}); print('JWT payload:', payload)\nexcept Exception as e: print('Failed to decode JWT payload:', e)"
+python3 <<'PY'
+import os, jwt, sys
+tok = os.environ.get('JWT_TOKEN')
+if not tok:
+  print('JWT_TOKEN not set')
+  sys.exit(0)
+try:
+  payload = jwt.decode(tok, options={'verify_signature': False})
+  print('JWT payload:', payload)
+except Exception as e:
+  print('Failed to decode JWT payload:', e)
+PY
 
 # Test GET access to the add-on with the generated token
 echo "Checking AMO GET /addons/addon/$SLUG/ with JWT auth"
