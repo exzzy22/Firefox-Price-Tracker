@@ -58,7 +58,7 @@ jobs:
             exit 0
           fi
           mkdir -p signed
-          npx web-ext sign --source-dir . --artifacts-dir signed
+          npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel unlisted --source-dir . --artifacts-dir signed
           SIGNED_XPI=$(ls signed/*.xpi | head -n1)
           if [ -z "$SIGNED_XPI" ]; then echo "Signing failed: no signed XPI found"; exit 1; fi
           echo "ZIPNAME=$(basename $SIGNED_XPI)" >> $GITHUB_ENV
