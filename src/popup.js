@@ -42,20 +42,47 @@ async function showCurrent() {
       const st = await browser.storage.local.get('lastDetected');
       const last = st.lastDetected;
       if (last && last.url && last.url.split('#')[0] === tab.url.split('#')[0]) {
-        el.innerHTML = `<div><strong>${compactTitle(last.title || tab.title)}</strong></div><div class="price">${last.raw}</div>`;
+        el.textContent = '';
+        const titleWrap = document.createElement('div');
+        const strong = document.createElement('strong');
+        strong.textContent = compactTitle(last.title || tab.title);
+        titleWrap.appendChild(strong);
+        const priceWrap = document.createElement('div');
+        priceWrap.className = 'price';
+        priceWrap.textContent = String(last.raw || '');
+        el.appendChild(titleWrap);
+        el.appendChild(priceWrap);
         return;
       }
       el.textContent = 'No price found on this page';
       return;
     }
-    el.innerHTML = `<div><strong>${compactTitle(resp.title || tab.title)}</strong></div><div class="price">${resp.raw}</div>`;
+    el.textContent = '';
+    const titleWrap = document.createElement('div');
+    const strong = document.createElement('strong');
+    strong.textContent = compactTitle(resp.title || tab.title);
+    titleWrap.appendChild(strong);
+    const priceWrap = document.createElement('div');
+    priceWrap.className = 'price';
+    priceWrap.textContent = String(resp.raw || '');
+    el.appendChild(titleWrap);
+    el.appendChild(priceWrap);
   } catch (e) {
     // try storage fallback
     try {
       const st = await browser.storage.local.get('lastDetected');
       const last = st.lastDetected;
       if (last && last.url && last.url.split('#')[0] === tab.url.split('#')[0]) {
-        el.innerHTML = `<div><strong>${compactTitle(last.title || tab.title)}</strong></div><div class="price">${last.raw}</div>`;
+        el.textContent = '';
+        const titleWrap = document.createElement('div');
+        const strong = document.createElement('strong');
+        strong.textContent = compactTitle(last.title || tab.title);
+        titleWrap.appendChild(strong);
+        const priceWrap = document.createElement('div');
+        priceWrap.className = 'price';
+        priceWrap.textContent = String(last.raw || '');
+        el.appendChild(titleWrap);
+        el.appendChild(priceWrap);
         return;
       }
     } catch (e2) {}
