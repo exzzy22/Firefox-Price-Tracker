@@ -127,9 +127,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
 
       - name: Update AMO listing (optional)
-        if: ${{ secrets.AMO_API_TOKEN || (secrets.AMO_JWT_ISSUER && secrets.AMO_JWT_SECRET) }}
         env:
-          AMO_API_TOKEN: ${{ secrets.AMO_API_TOKEN }}
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
@@ -139,13 +137,13 @@ jobs:
           fi
           SLUG=$(python3 -c "import json,sys;print(json.load(open('release/amo-metadata.json')).get('addon_slug',''))")
           if [ -z "$SLUG" ]; then echo "addon_slug missing in release/amo-metadata.json; skipping"; exit 0; fi
-          echo "Preparing auth header for AMO"
-          if [ -n "$AMO_API_TOKEN" ]; then
-            AUTH_HEADER="Authorization: Bearer $AMO_API_TOKEN"
-          else
-            echo "No AMO_API_TOKEN found, generating JWT from AMO_JWT_ISSUER/SECRET"
-            python3 -m pip install --quiet PyJWT
-            JWT_TOKEN=$(python3 - <<'PY'
+          echo "Preparing auth header for AMO via JWT"
+          if [ -z "${AMO_JWT_ISSUER:-}" ] || [ -z "${AMO_JWT_SECRET:-}" ]; then
+            echo "AMO JWT credentials not present; skipping AMO update"
+            exit 0
+          fi
+          python3 -m pip install --quiet PyJWT
+          JWT_TOKEN=$(python3 - <<'PY'
 import os, time, uuid, jwt
 iss = os.environ.get('AMO_JWT_ISSUER')
 secret = os.environ.get('AMO_JWT_SECRET')
@@ -156,8 +154,7 @@ if isinstance(token, bytes): token = token.decode('utf-8')
 print(token)
 PY
 )
-            AUTH_HEADER="Authorization: JWT $JWT_TOKEN"
-          fi
+          AUTH_HEADER="Authorization: JWT $JWT_TOKEN"
           echo "PATCHing AMO add-on: $SLUG"
           curl -s -X PATCH "https://addons.mozilla.org/api/v5/addons/addon/$SLUG/" \
             -H "$AUTH_HEADER" \
