@@ -32,7 +32,7 @@ jobs:
           if [ -n "${{ github.event.inputs.tag }}" ]; then TAG="${{ github.event.inputs.tag }}"; else TAG="${GITHUB_REF##*/}"; fi
           NAME="${{ github.event.inputs.name }}"
           if [ -z "$NAME" ]; then NAME="$TAG"; fi
-          ZIPNAME="FirefoxPriceTracker-${TAG}.xpi"
+          ZIPNAME="FirefoxPriceTracker-${TAG}.zip"
           echo "TAG=$TAG" >> $GITHUB_ENV
           echo "NAME=$NAME" >> $GITHUB_ENV
           echo "ZIPNAME=$ZIPNAME" >> $GITHUB_ENV
@@ -40,7 +40,7 @@ jobs:
       - name: Ensure zip is available
         run: sudo apt-get update && sudo apt-get install -y zip
 
-      - name: Create XPI package
+      - name: Create ZIP package
         run: |
           rm -f "$ZIPNAME"
           zip -r "$ZIPNAME" . -x ".github/*" ".git/*" "README.md" "LICENSE" ".gitignore" ".vscode/*"
@@ -75,44 +75,26 @@ jobs:
           WEB_EXT_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
           set -euo pipefail
-          # If secrets missing, fail explicitly with guidance
+          # If secrets missing, skip AMO submission but continue (we still upload the built ZIP to GitHub)
           if [ -z "${WEB_EXT_JWT_ISSUER:-}" ] || [ -z "${WEB_EXT_JWT_SECRET:-}" ]; then
-            echo "ERROR: AMO JWT secrets not set (AMO_JWT_ISSUER / AMO_JWT_SECRET). Signing cannot proceed."
-            echo "Set these secrets in your repository settings and re-run the workflow."
-            # fail so CI shows clear error instead of continuing
-            exit 1
-          fi
-          mkdir -p signed
-          echo "Looking for built XPI in build/"
-          ls -la build || true
-          XPI_TO_SIGN="$(ls build/*.xpi 2>/dev/null | head -n1 || true)"
-          if [ -z "$XPI_TO_SIGN" ]; then
-            echo "No built XPI found in build/; attempting source-dir signing (web-ext will build/sign from source)"
-            # capture web-ext output for debugging
-            npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel unlisted --source-dir . --artifacts-dir signed 2>&1 | tee webext-sign.log || true
+            echo "INFO: AMO JWT secrets not set (AMO_JWT_ISSUER / AMO_JWT_SECRET). Skipping AMO submission."
           else
-            echo "Signing built XPI: $XPI_TO_SIGN"
-            npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel unlisted --xpi "$XPI_TO_SIGN" --artifacts-dir signed 2>&1 | tee webext-sign.log || true
+            echo "Attempting to submit to AMO for signing (we will not download the signed XPI)"
+            echo "Looking for built XPI in build/"
+            ls -la build || true
+            XPI_TO_SIGN="$(ls build/*.xpi 2>/dev/null | head -n1 || true)"
+            if [ -z "$XPI_TO_SIGN" ]; then
+              echo "No built XPI found in build/; submitting source-dir to AMO"
+              # run sign and do not fail the job if AMO reports a conflict or other non-fatal error
+              npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel unlisted --source-dir . --artifacts-dir signed 2>&1 | tee webext-sign.log || true
+            else
+              echo "Submitting built XPI to AMO: $XPI_TO_SIGN"
+              npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel unlisted --xpi "$XPI_TO_SIGN" --artifacts-dir signed 2>&1 | tee webext-sign.log || true
+            fi
+            echo "--- web-ext sign log (tail) ---"
+            tail -n 200 webext-sign.log || true
+            echo "Note: we do not download or attach the signed XPI in this workflow."
           fi
-
-          echo "--- signed directory contents ---"
-          ls -la signed || true
-          echo "--- build directory contents ---"
-          ls -la build || true
-          echo "--- web-ext sign log (tail) ---"
-          tail -n 200 webext-sign.log || true
-
-          SIGNED_XPI=$(ls signed/*.xpi 2>/dev/null | head -n1 || true)
-          if [ -z "$SIGNED_XPI" ]; then
-            echo "ERROR: signing did not produce a signed/*.xpi file. See signed/ and webext-sign.log for details."
-            exit 1
-          fi
-          echo "Found signed XPI: $SIGNED_XPI"
-          # Ensure the release asset name matches the signed XPI basename
-          ZIPNAME="$(basename "$SIGNED_XPI")"
-          echo "ZIPNAME=$ZIPNAME" >> $GITHUB_ENV
-          echo "Moving signed XPI to: $GITHUB_WORKSPACE/$ZIPNAME"
-          mv "$SIGNED_XPI" "$GITHUB_WORKSPACE/$ZIPNAME"
 
 
       - name: Create GitHub Release
@@ -126,12 +108,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
 
-      - name: Upload XPI to release
+      - name: Upload ZIP to release
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ env.ZIPNAME }}
           asset_name: ${{ env.ZIPNAME }}
-          asset_content_type: application/x-xpinstall
+          asset_content_type: application/zip
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
