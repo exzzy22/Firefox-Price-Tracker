@@ -9,3 +9,4 @@ web-ext-artifacts/
 __pycache__/
 /.env
 /.idea/
+build/
