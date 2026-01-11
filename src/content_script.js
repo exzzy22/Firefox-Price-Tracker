@@ -1,13 +1,4 @@
-// This file has been moved to `src/content_script.js`.
-// Keep a small shim to indicate the new location.
-console.warn('Old root content_script.js — use src/content_script.js instead');
-
-/*
-Original content moved to src/content_script.js
-*/
-//
-// (shim)
-//
+// Content script: respond to getPrice message with detected price and title
 (function(){
   function cleanNumber(s) {
     if (!s) return null;

@@ -1,8 +1,3 @@
-// This file has moved to `src/details.js`.
-console.warn('Old root details.js — use src/details.js instead');
-
-/* Original content moved to src/details.js */
-
 async function loadDetails() {
   const container = document.getElementById('list');
   

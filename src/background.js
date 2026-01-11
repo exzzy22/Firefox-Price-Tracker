@@ -1,14 +1,4 @@
-// This file has moved to `src/background.js`.
-// Keep a shim to indicate the new location and avoid accidental usage of the root file.
-console.warn('Old root background.js — use src/background.js instead');
-
-/*
-Original content moved to src/background.js
-*/
-
-//
-// (shim)
-//
+// Background service worker: periodic checks of tracked URLs
 async function parsePriceFromHTML(html, preferredSelector) {
   function cleanNumber(s) {
     if (!s) return null;

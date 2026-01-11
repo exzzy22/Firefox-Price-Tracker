@@ -16,6 +16,7 @@ Files:
 - `popup.html`, `popup.js` — popup UI to track and list items
 - `content_script.js` — extracts price and title from the current page
 - `background.js` — periodic checks and notifications
+- `src/` — main extension source files (`popup.html`, `popup.js`, `background.js`, `content_script.js`, `details.html`, `details.js`)
 
 ## License
 
