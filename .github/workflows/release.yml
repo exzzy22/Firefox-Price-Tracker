@@ -121,12 +121,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
 
-      - name: Update AMO listing (optional)
-        env:
-          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
-          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+      - name: Skip AMO listing update
         run: |
-          bash .github/scripts/update_amo.sh
+          echo "AMO listing update step removed; no API calls will be made from CI."
 
       - name: Upload ZIP to release
         uses: actions/upload-release-asset@v1

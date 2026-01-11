@@ -1,9 +1,0 @@
-{
-  "addon_slug": "general-price-tracker",
-  "name": { "en-US": "Price Tracker" },
-  "summary": { "en-US": "Track product prices and get notified when they change." },
-  "description": { "en-US": "<p>Track product prices and get notified when they change. Configure tracked products from the popup; receive desktop notifications when prices change.</p>" },
-  "homepage": "https://github.com/exzzy22/Firefox-Price-Tracker",
-  "tags": ["shopping", "price", "tracker", "alerts"],
-  "default_locale": "en-US"
-}
