@@ -5,7 +5,6 @@ dist/
 *.log
 web-ext-artifacts/
 /.vscode/
-icons/icon-*.png
 *.pyc
 __pycache__/
 /.env
