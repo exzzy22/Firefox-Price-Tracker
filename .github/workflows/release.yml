@@ -49,11 +49,14 @@ jobs:
         run: npm install --global web-ext
 
       - name: Sign XPI with AMO (JWT)
-        if: ${{ secrets.AMO_JWT_ISSUER && secrets.AMO_JWT_SECRET }}
         env:
           WEB_EXT_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           WEB_EXT_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
+          if [ -z "$WEB_EXT_JWT_ISSUER" ] || [ -z "$WEB_EXT_JWT_SECRET" ]; then
+            echo "AMO JWT secrets not set; skipping signing step"
+            exit 0
+          fi
           mkdir -p signed
           npx web-ext sign --source-dir . --artifacts-dir signed
           SIGNED_XPI=$(ls signed/*.xpi | head -n1)
