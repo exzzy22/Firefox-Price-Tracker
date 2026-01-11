@@ -79,8 +79,16 @@ jobs:
             exit 0
           fi
           mkdir -p signed
-          npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel unlisted --source-dir . --artifacts-dir signed
-          SIGNED_XPI=$(ls signed/*.xpi | head -n1)
+          # Prefer signing the built XPI from web-ext build so all generated files (icons etc.) are included
+          XPI_TO_SIGN="$(ls build/*.xpi 2>/dev/null | head -n1)"
+          if [ -z "$XPI_TO_SIGN" ]; then
+            echo "No built XPI found in build/; falling back to source-dir signing"
+            npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel unlisted --source-dir . --artifacts-dir signed
+          else
+            echo "Signing built XPI: $XPI_TO_SIGN"
+            npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel unlisted --xpi "$XPI_TO_SIGN" --artifacts-dir signed
+          fi
+          SIGNED_XPI=$(ls signed/*.xpi 2>/dev/null | head -n1)
           if [ -z "$SIGNED_XPI" ]; then echo "Signing failed: no signed XPI found"; exit 1; fi
           echo "ZIPNAME=$(basename $SIGNED_XPI)" >> $GITHUB_ENV
           mv "$SIGNED_XPI" "$GITHUB_WORKSPACE/${{ env.ZIPNAME }}"
