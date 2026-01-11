@@ -74,24 +74,45 @@ jobs:
           WEB_EXT_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           WEB_EXT_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
-          if [ -z "$WEB_EXT_JWT_ISSUER" ] || [ -z "$WEB_EXT_JWT_SECRET" ]; then
-            echo "AMO JWT secrets not set; skipping signing step"
-            exit 0
+          set -euo pipefail
+          # If secrets missing, fail explicitly with guidance
+          if [ -z "${WEB_EXT_JWT_ISSUER:-}" ] || [ -z "${WEB_EXT_JWT_SECRET:-}" ]; then
+            echo "ERROR: AMO JWT secrets not set (AMO_JWT_ISSUER / AMO_JWT_SECRET). Signing cannot proceed."
+            echo "Set these secrets in your repository settings and re-run the workflow."
+            # fail so CI shows clear error instead of continuing
+            exit 1
           fi
           mkdir -p signed
-          # Prefer signing the built XPI from web-ext build so all generated files (icons etc.) are included
-          XPI_TO_SIGN="$(ls build/*.xpi 2>/dev/null | head -n1)"
+          echo "Looking for built XPI in build/"
+          ls -la build || true
+          XPI_TO_SIGN="$(ls build/*.xpi 2>/dev/null | head -n1 || true)"
           if [ -z "$XPI_TO_SIGN" ]; then
-            echo "No built XPI found in build/; falling back to source-dir signing"
-            npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel unlisted --source-dir . --artifacts-dir signed
+            echo "No built XPI found in build/; attempting source-dir signing (web-ext will build/sign from source)"
+            # capture web-ext output for debugging
+            npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel unlisted --source-dir . --artifacts-dir signed 2>&1 | tee webext-sign.log || true
           else
             echo "Signing built XPI: $XPI_TO_SIGN"
-            npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel unlisted --xpi "$XPI_TO_SIGN" --artifacts-dir signed
+            npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel unlisted --xpi "$XPI_TO_SIGN" --artifacts-dir signed 2>&1 | tee webext-sign.log || true
           fi
-          SIGNED_XPI=$(ls signed/*.xpi 2>/dev/null | head -n1)
-          if [ -z "$SIGNED_XPI" ]; then echo "Signing failed: no signed XPI found"; exit 1; fi
-          echo "ZIPNAME=$(basename $SIGNED_XPI)" >> $GITHUB_ENV
-          mv "$SIGNED_XPI" "$GITHUB_WORKSPACE/${{ env.ZIPNAME }}"
+
+          echo "--- signed directory contents ---"
+          ls -la signed || true
+          echo "--- build directory contents ---"
+          ls -la build || true
+          echo "--- web-ext sign log (tail) ---"
+          tail -n 200 webext-sign.log || true
+
+          SIGNED_XPI=$(ls signed/*.xpi 2>/dev/null | head -n1 || true)
+          if [ -z "$SIGNED_XPI" ]; then
+            echo "ERROR: signing did not produce a signed/*.xpi file. See signed/ and webext-sign.log for details."
+            exit 1
+          fi
+          echo "Found signed XPI: $SIGNED_XPI"
+          # Ensure the release asset name matches the signed XPI basename
+          ZIPNAME="$(basename "$SIGNED_XPI")"
+          echo "ZIPNAME=$ZIPNAME" >> $GITHUB_ENV
+          echo "Moving signed XPI to: $GITHUB_WORKSPACE/$ZIPNAME"
+          mv "$SIGNED_XPI" "$GITHUB_WORKSPACE/$ZIPNAME"
 
 
       - name: Create GitHub Release
