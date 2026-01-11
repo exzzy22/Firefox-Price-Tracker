@@ -45,6 +45,23 @@ jobs:
           rm -f "$ZIPNAME"
           zip -r "$ZIPNAME" . -x ".github/*" ".git/*" "README.md" "LICENSE" ".gitignore" ".vscode/*"
 
+      - name: Install web-ext
+        run: npm install --global web-ext
+
+      - name: Sign XPI with AMO (JWT)
+        if: ${{ secrets.AMO_JWT_ISSUER && secrets.AMO_JWT_SECRET }}
+        env:
+          WEB_EXT_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          mkdir -p signed
+          npx web-ext sign --source-dir . --artifacts-dir signed
+          SIGNED_XPI=$(ls signed/*.xpi | head -n1)
+          if [ -z "$SIGNED_XPI" ]; then echo "Signing failed: no signed XPI found"; exit 1; fi
+          echo "ZIPNAME=$(basename $SIGNED_XPI)" >> $GITHUB_ENV
+          mv "$SIGNED_XPI" "$GITHUB_WORKSPACE/${{ env.ZIPNAME }}"
+
+
       - name: Create GitHub Release
         id: create_release
         uses: actions/create-release@v1
