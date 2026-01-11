@@ -21,6 +21,51 @@
   }
 
   function findPrice() {
+    // Site-specific heuristics: Amazon uses many non-standard selectors
+    // If product title exists, prefer prices near that title
+    try {
+      const prod = document.querySelector('#productTitle');
+      if (prod) {
+        const container = prod.closest('#centerCol') || prod.parentElement || document;
+        const nearSelectors = ['#priceblock_ourprice','#priceblock_dealprice','#priceblock_saleprice','#price_inside_buybox','.a-price .a-offscreen','.priceToPay .a-offscreen','#corePrice_feature_div .a-offscreen'];
+        for (const sel of nearSelectors) {
+          try {
+            const el = container.querySelector(sel);
+            if (el) {
+              const raw = el.getAttribute && el.getAttribute('content') || el.textContent || el.value || '';
+              const v = cleanNumber(raw);
+              if (v != null) return { price: v, raw };
+            }
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
+    try {
+      const host = (location.hostname || '').toLowerCase();
+      if (host.includes('amazon.')) {
+        const amazonSelectors = [
+          '#priceblock_ourprice',
+          '#priceblock_dealprice',
+          '#priceblock_saleprice',
+          '#price_inside_buybox',
+          '#tp_price_block_total_price_ww .a-offscreen',
+          '.a-price .a-offscreen',
+          '.priceToPay .a-offscreen',
+          '#corePrice_feature_div .a-offscreen',
+          '#corePriceDisplay_desktop_feature_div .a-offscreen'
+        ];
+        for (const sel of amazonSelectors) {
+          try {
+            const el = document.querySelector(sel);
+            if (el) {
+              const raw = el.getAttribute && el.getAttribute('content') || el.textContent || el.value || '';
+              const v = cleanNumber(raw);
+              if (v != null) return { price: v, raw };
+            }
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
     // 1) Microdata / JSON-LD
     try {
       // JSON-LD
@@ -78,6 +123,11 @@
   }
 
   function findTitle() {
+    // Prefer explicit product title on Amazon and similar sites
+    try {
+      const prod = document.querySelector('#productTitle');
+      if (prod && prod.textContent && prod.textContent.trim()) return prod.textContent.trim();
+    } catch (e) {}
     const og = document.querySelector('meta[property="og:title"]');
     if (og && og.content) return og.content;
     const t = document.querySelector('meta[name="twitter:title"]');
@@ -214,11 +264,90 @@
         function clickHandler(e) {
           e.preventDefault(); e.stopPropagation();
           cleanup();
-          const sel = getSelector(e.target);
-          const contentAttr = e.target.getAttribute && e.target.getAttribute('content');
-          const rawVal = (contentAttr != null && contentAttr !== '') ? contentAttr : (e.target.textContent || e.target.value || '');
+          // If user clicked an offscreen/hidden duplicate (common on Amazon), prefer the visible counterpart
+          let clicked = e.target;
+          try {
+            const cls = clicked.className || '';
+            if (typeof cls === 'string' && (/(-offscreen$)|(^|\s)a-offscreen(\s|$)/.test(cls))) {
+              // find nearest price-like container and pick the first visible offscreen-like element
+              let container = clicked.closest('#corePrice_feature_div, #price, #centerCol, .a-price, .priceToPay, body');
+              if (!container) container = document;
+              const candidates = Array.from(container.querySelectorAll('[class*="-offscreen"], .a-offscreen'));
+              for (const c of candidates) {
+                try {
+                  const rects = c.getClientRects();
+                  if (rects && rects.length && c.offsetWidth > 0 && c.offsetHeight > 0) { clicked = c; break; }
+                } catch (err) {}
+              }
+            }
+          } catch (e2) {}
+
+          // Prefer accessible/single-line descendant when clicked element contains multi-line or duplicate parts
+          function bestElementForPrice(el) {
+            try {
+              const currencyRe = /[$£€¥]\s?[0-9]/;
+              // prefer aria-label/title if they contain a currency snippet
+              const aria = el.getAttribute && el.getAttribute('aria-label');
+              if (aria && currencyRe.test(aria)) return { el, raw: aria };
+              const titleAttr = el.getAttribute && el.getAttribute('title');
+              if (titleAttr && currencyRe.test(titleAttr)) return { el, raw: titleAttr };
+              // look for visible descendant elements that contain a single-line currency snippet
+              const descendants = Array.from(el.querySelectorAll('*'));
+              for (const d of descendants) {
+                try {
+                  if (!(d.offsetWidth > 0 && d.offsetHeight > 0)) continue;
+                  const txt = (d.innerText || d.textContent || '').trim();
+                  if (!txt) continue;
+                  if (currencyRe.test(txt) && !/\n/.test(txt)) return { el: d, raw: txt };
+                } catch (ee) {}
+              }
+              // fallback to element text if it contains currency
+              const txt = (el.innerText || el.textContent || '').trim();
+              if (txt && currencyRe.test(txt)) return { el, raw: txt };
+            } catch (e) {}
+            return { el };
+          }
+
+          try {
+            const best = bestElementForPrice(clicked);
+            if (best && best.el) clicked = best.el;
+          } catch (be) {}
+
+          // Build a selector that targets the visible price element or its container
+          let sel = getSelector(clicked);
+          try {
+            const cls = clicked.className || '';
+            if (typeof cls === 'string' && (/(-offscreen$)|(^|\s)a-offscreen(\s|$)/.test(cls))) {
+              const container = clicked.closest('#corePrice_feature_div, #price, #centerCol, .a-price, .priceToPay, body') || clicked.parentElement;
+              if (container) {
+                let containerSel = container.id ? ('#' + container.id) : getSelector(container) || null;
+                if (containerSel) {
+                  // Prefer first visible .a-offscreen within the container
+                  sel = containerSel + ' .a-offscreen:first-of-type';
+                }
+              }
+            }
+          } catch (se) {}
+          const contentAttr = clicked.getAttribute && clicked.getAttribute('content');
+          // Prefer accessible labels or visible single-line text; collapse whitespace to a single space
+          const ariaLabel = clicked.getAttribute && clicked.getAttribute('aria-label');
+          const titleAttr = clicked.getAttribute && clicked.getAttribute('title');
+          const rawSource = ariaLabel || titleAttr || ((typeof clicked.innerText === 'string' && clicked.innerText.trim()) ? clicked.innerText : (clicked.textContent || clicked.value || ''));
+          const visibleText = String(rawSource).replace(/\s+/g, ' ').trim();
+          const rawVal = (contentAttr != null && contentAttr !== '') ? contentAttr : visibleText;
+          // Prepare a normalized raw to send to background: prefer first currency match and collapse whitespace
+          let sendRaw = String(rawVal || '').trim();
+          try {
+            const m = sendRaw.match(/[\$£€¥]\s?[0-9][0-9,\.\s]*/);
+            if (m && m[0]) sendRaw = m[0].trim();
+            sendRaw = sendRaw.replace(/\s+/g, ' ').trim();
+          } catch (e) {}
           const priceVal = cleanNumber(rawVal);
           const title = findTitle();
+          // send the manual pick result to the background so it can persist even after popup closes
+          try {
+            browser.runtime.sendMessage({ action: 'manualSelectResult', item: { url: location.href, selector: sel, raw: sendRaw, price: priceVal, title } }).catch(()=>{});
+          } catch (e) {}
           resolve({ selector: sel, raw: rawVal, price: priceVal, title });
         }
         function keyHandler(e) {

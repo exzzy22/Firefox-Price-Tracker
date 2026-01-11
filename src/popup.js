@@ -3,10 +3,24 @@ async function getActiveTab() {
   return tabs && tabs[0];
 }
 
+function normalizeStoredRaw(raw) {
+  try {
+    let s = String(raw || '').trim();
+    // prefer first currency-like match to avoid double captures
+    const m = s.match(/[\$£€¥]\s?[0-9][0-9,\.\s]*/);
+    if (m && m[0]) s = m[0].trim();
+    // collapse whitespace to single spaces
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
+  } catch (e) { return String(raw || ''); }
+}
+
 function formatCurrency(price, currency) {
   if (price == null) return '-';
   try { return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(price); } catch(e) { return price; }
 }
+
+// Use background normalization to ensure consistency between pick and recheck
 
 async function showCurrent() {
   const el = document.getElementById('current');
@@ -89,7 +103,16 @@ async function loadTracked() {
     left.appendChild(title);
 
     const right = document.createElement('div'); right.className = 'price-col';
-    const price = document.createElement('div'); price.className = 'price'; price.textContent = item.lastRaw || item.lastPrice;
+    const price = document.createElement('div'); price.className = 'price';
+    // sanitize display: prefer first currency-like match to avoid duplicate strings like "€26.51€26.51"
+    try {
+      let display = item.lastRaw || (item.lastPrice != null ? String(item.lastPrice) : '');
+      if (display) {
+        const m = String(display).match(/[\$£€¥]\s?[0-9][0-9,\.\s]*/);
+        if (m && m[0]) display = m[0].trim();
+      }
+      price.textContent = display || item.lastPrice || '';
+    } catch (e) { price.textContent = item.lastRaw || item.lastPrice; }
     const actions = document.createElement('div'); actions.className = 'actions';
     const open = document.createElement('button'); open.textContent = 'Open'; open.className = 'secondary';
     open.addEventListener('click', () => { browser.tabs.create({ url: item.url }); });
@@ -122,16 +145,45 @@ async function trackCurrent() {
     }
   }
   if (!resp || !resp.price) { alert('No price detected on this page.'); return; }
+  // normalize using background logic
+  let normalizedRaw = resp.raw || '';
+  let normalizedPrice = resp.price != null ? resp.price : null;
+  try {
+    const norm = await browser.runtime.sendMessage({ action: 'normalizePrice', raw: normalizedRaw });
+    if (norm) { normalizedRaw = norm.raw; normalizedPrice = norm.price; }
+  } catch (e) {}
+  // If background normalization failed or returned null price, do a local fallback:
+  try {
+    const txt = String(normalizedRaw || '');
+    const all = txt.match(/[\$£€¥]\s?[0-9][0-9,\.\s]*/g);
+    if (all && all.length) {
+      // prefer the first currency match (avoid double-capture like "€26.51€26.51")
+      normalizedRaw = all[0].trim();
+    }
+    if (normalizedPrice == null) {
+      // local numeric parse
+      let norm = String(normalizedRaw).replace(/[^0-9.,\-]/g, '').trim();
+      const commaCount = (norm.match(/,/g) || []).length;
+      const dotCount = (norm.match(/\./g) || []).length;
+      if (commaCount && !dotCount) norm = norm.replace(/,/g, '.');
+      else if (commaCount && dotCount && norm.indexOf(',') > norm.indexOf('.')) norm = norm.replace(/\./g, '').replace(/,/g, '.');
+      else norm = norm.replace(/,/g, '');
+      const v = parseFloat(norm);
+      if (isFinite(v)) normalizedPrice = v;
+    }
+  } catch (e) {}
+  // normalize stored raw for consistent comparisons (collapse whitespace, prefer first currency match)
+  normalizedRaw = normalizeStoredRaw(normalizedRaw);
   const stored = await browser.storage.local.get('tracked');
   const list = stored.tracked || [];
   const existing = list.find(i => i.url === tab.url);
   const newItem = {
     url: tab.url,
     title: resp.title || tab.title,
-    lastPrice: resp.price,
-    lastRaw: resp.raw,
+    lastPrice: normalizedPrice,
+    lastRaw: normalizedRaw,
     updatedAt: Date.now(),
-    history: [{ ts: Date.now(), price: resp.price, raw: resp.raw }],
+    history: [{ ts: Date.now(), price: normalizedPrice, raw: normalizedRaw }],
     selector: selectedSelector || null,
     // timestamp of last automatic/background check
     lastChecked: Date.now()
@@ -147,6 +199,7 @@ async function trackCurrent() {
     list.push(newItem);
   }
   await browser.storage.local.set({ tracked: list });
+  try { browser.runtime.sendMessage({ action: 'logSaved', item: newItem }).catch(()=>{}); } catch(e) {}
   await loadTracked();
   alert('Tracked: ' + newItem.title);
 }
@@ -156,40 +209,11 @@ document.getElementById('pickBtn').addEventListener('click', async () => {
   const tab = await getActiveTab();
   if (!tab) return alert('No active tab');
   try {
-    const resp = await browser.tabs.sendMessage(tab.id, { action: 'startSelect' });
-    if (resp && resp.selector) {
-      selectedSelector = resp.selector;
-      // Build tracked item from selection result and save
-      const stored = await browser.storage.local.get('tracked');
-      const list = stored.tracked || [];
-      const existing = list.find(i => i.url === tab.url);
-      const newItem = {
-        url: tab.url,
-        title: resp.title || tab.title,
-        lastPrice: resp.price,
-        lastRaw: resp.raw,
-        updatedAt: Date.now(),
-        history: [{ ts: Date.now(), price: resp.price, raw: resp.raw }],
-        selector: selectedSelector || null,
-        lastChecked: Date.now()
-      };
-      if (existing) {
-        existing.lastPrice = newItem.lastPrice;
-        existing.lastRaw = newItem.lastRaw;
-        existing.updatedAt = newItem.updatedAt;
-        existing.history = existing.history || [];
-        existing.history.push({ ts: newItem.updatedAt, price: newItem.lastPrice, raw: newItem.lastRaw });
-        existing.selector = selectedSelector;
-      } else {
-        list.push(newItem);
-      }
-      await browser.storage.local.set({ tracked: list });
-      await loadTracked();
-      showSelectorNote();
-      alert('Manually tracked: ' + (newItem.title || newItem.url));
-    } else {
-      alert('Selection cancelled');
-    }
+    // Start selection in page and close popup immediately so it doesn't get in the way.
+    // The content script will send the selection result to background for persistence.
+    browser.tabs.sendMessage(tab.id, { action: 'startSelect' }).catch(()=>{});
+    window.close();
+    return;
   } catch (e) {
     console.warn('selection failed', e);
     alert('Could not start selection (page may be in a different frame or not supported)');

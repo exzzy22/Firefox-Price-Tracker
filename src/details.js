@@ -58,7 +58,17 @@ async function loadDetails() {
 
     // Price column
     const priceCol = document.createElement('div'); priceCol.className = 'price-col';
-    const price = document.createElement('div'); price.textContent = item.lastRaw || item.lastPrice; price.style.fontWeight = '700'; price.style.textAlign = 'center';
+    const price = document.createElement('div');
+    // sanitize display: prefer first currency-like match to avoid duplicate strings
+    try {
+      let display = item.lastRaw || (item.lastPrice != null ? String(item.lastPrice) : '');
+      if (display) {
+        const m = String(display).match(/[$£€¥]\s?[0-9][0-9,\.\s]*/);
+        if (m && m[0]) display = m[0].trim();
+      }
+      price.textContent = display || item.lastPrice || '';
+    } catch (e) { price.textContent = item.lastRaw || item.lastPrice; }
+    price.style.fontWeight = '700'; price.style.textAlign = 'center';
     priceCol.appendChild(price);
 
     // Buttons column
@@ -103,7 +113,15 @@ async function loadDetails() {
       const listEl = document.createElement('div'); listEl.style.display = 'flex'; listEl.style.flexDirection = 'column'; listEl.style.gap = '4px';
       for (const entry of h.slice().reverse()) {
         const row = document.createElement('div'); row.style.display = 'flex'; row.style.justifyContent = 'space-between'; row.style.fontSize = '13px'; row.style.padding = '6px 8px'; row.style.background = '#fff'; row.style.border = '1px solid #eef2f6'; row.style.borderRadius = '6px';
-        const left = document.createElement('div'); left.textContent = entry.raw || entry.price;
+        const left = document.createElement('div');
+        try {
+          let display = entry.raw || (entry.price != null ? String(entry.price) : '');
+          if (display) {
+            const m = String(display).match(/[$£€¥]\s?[0-9][0-9,\.\s]*/);
+            if (m && m[0]) display = m[0].trim();
+          }
+          left.textContent = display || entry.price || '';
+        } catch (e) { left.textContent = entry.raw || entry.price; }
         const rightTime = document.createElement('div'); rightTime.className = 'small'; rightTime.style.color = '#6b7280'; rightTime.textContent = entry.ts ? new Date(entry.ts).toLocaleString() : '';
         row.appendChild(left); row.appendChild(rightTime);
         listEl.appendChild(row);
