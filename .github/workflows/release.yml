@@ -48,6 +48,27 @@ jobs:
       - name: Install web-ext
         run: npm install --global web-ext
 
+      - name: Show files and icons (debug)
+        run: |
+          echo "--- root listing ---"
+          ls -la
+          echo "--- icons listing ---"
+          ls -la icons || true
+          echo "--- find icon files ---"
+          find . -maxdepth 3 -name 'icon-*.png' || true
+          echo "--- manifest ---"
+          cat manifest.json || true
+
+      - name: Build extension with web-ext (debug)
+        run: |
+          if command -v web-ext >/dev/null 2>&1; then
+            web-ext build --source-dir . --artifacts-dir build || npx web-ext build --source-dir . --artifacts-dir build
+          else
+            npx web-ext build --source-dir . --artifacts-dir build
+          fi
+          echo "Built artifacts:"; ls -la build || true
+
+
       - name: Sign XPI with AMO (JWT)
         env:
           WEB_EXT_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}

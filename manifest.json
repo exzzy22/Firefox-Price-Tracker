@@ -25,9 +25,9 @@
       "id": "price-tracker@examples.local",
       "strict_min_version": "60.0",
       "data_collection_permissions": {
-        "required": [],
+        "required": ["none"],
         "optional": [],
-        "other": []
+        "other": ["This extension does not collect personal user data."]
       }
     }
   },
