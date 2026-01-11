@@ -143,17 +143,7 @@ jobs:
             exit 0
           fi
           python3 -m pip install --quiet PyJWT
-          JWT_TOKEN=$(python3 - <<'PY'
-import os, time, uuid, jwt
-iss = os.environ.get('AMO_JWT_ISSUER')
-secret = os.environ.get('AMO_JWT_SECRET')
-iat = int(time.time())
-payload = {"iss": iss, "jti": str(uuid.uuid4()), "iat": iat, "exp": iat + 60}
-token = jwt.encode(payload, secret, algorithm="HS256")
-if isinstance(token, bytes): token = token.decode('utf-8')
-print(token)
-PY
-)
+            JWT_TOKEN=$(python3 -c "import os,time,uuid,jwt; iss=os.environ.get('AMO_JWT_ISSUER'); secret=os.environ.get('AMO_JWT_SECRET'); iat=int(time.time()); payload={'iss':iss,'jti':str(uuid.uuid4()),'iat':iat,'exp':iat+60}; token=jwt.encode(payload,secret,algorithm='HS256'); print(token.decode('utf-8') if isinstance(token,bytes) else token)")
           AUTH_HEADER="Authorization: JWT $JWT_TOKEN"
           echo "PATCHing AMO add-on: $SLUG"
           curl -s -X PATCH "https://addons.mozilla.org/api/v5/addons/addon/$SLUG/" \
