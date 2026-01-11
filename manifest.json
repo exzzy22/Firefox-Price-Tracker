@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Price Tracker",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Track product prices and get notified when they change.",
   "permissions": ["storage", "alarms", "notifications", "activeTab", "tabs", "<all_urls>"],
   "background": { "scripts": ["src/background.js"], "persistent": false },

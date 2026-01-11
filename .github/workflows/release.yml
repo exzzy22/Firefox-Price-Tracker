@@ -68,6 +68,24 @@ jobs:
           fi
           echo "Built artifacts:"; ls -la build || true
 
+      - name: Ensure built artifact is XPI
+        run: |
+          # If web-ext produced a .zip, convert/rename it to .xpi so signing uses the packaged artifact
+          set -euo pipefail
+          ZIPFILE=$(ls build/*.zip 2>/dev/null | head -n1 || true)
+          if [ -n "$ZIPFILE" ]; then
+            XPIFILE="${ZIPFILE%.zip}.xpi"
+            if [ ! -f "$XPIFILE" ]; then
+              echo "Renaming $ZIPFILE -> $XPIFILE"
+              mv "$ZIPFILE" "$XPIFILE"
+            else
+              echo "XPI already exists: $XPIFILE"
+            fi
+          else
+            echo "No build/*.zip found; leaving build/ as-is"
+          fi
+          echo "build/ contents:"; ls -la build || true
+
 
       - name: Sign XPI with AMO (JWT)
         env:
