@@ -49,7 +49,8 @@ async function loadDetails() {
     const title = document.createElement('a'); title.className = 'title'; title.textContent = item.title || item.url; title.href = '#';
     title.addEventListener('click', (e) => { e.preventDefault(); browser.tabs.create({ url: item.url }); });
     const updated = document.createElement('div'); updated.className = 'small'; updated.textContent = item.updatedAt ? ('Updated: ' + new Date(item.updatedAt).toLocaleString()) : '';
-    nameCol.appendChild(title); nameCol.appendChild(updated);
+    const lastChecked = document.createElement('div'); lastChecked.className = 'small'; lastChecked.textContent = item.lastChecked ? ('Last checked: ' + new Date(item.lastChecked).toLocaleString()) : '';
+    nameCol.appendChild(title); nameCol.appendChild(updated); nameCol.appendChild(lastChecked);
 
     // Website column
     const siteCol = document.createElement('div'); siteCol.className = 'site';
