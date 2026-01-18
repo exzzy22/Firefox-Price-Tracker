@@ -273,5 +273,5 @@ document.getElementById('openDetailsBtn').addEventListener('click', () => {
   const url = browser.runtime.getURL('src/details.html');
   browser.tabs.create({ url });
 });
-document.addEventListener('DOMContentLoaded', () => { showCurrent(); loadTracked(); });
+document.addEventListener('DOMContentLoaded', () => { showCurrent(); loadTracked(); try { browser.runtime.sendMessage({ action: 'clearBadge' }).catch(()=>{}); } catch(e) {} });
 document.addEventListener('DOMContentLoaded', showSelectorNote);

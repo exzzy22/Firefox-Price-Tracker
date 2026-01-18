@@ -165,6 +165,32 @@ function canonicalForCompare(raw) {
   } catch (e) { return String(raw || ''); }
 }
 
+// Badge helpers: increment or clear the browser action badge and persist count
+async function setBadge(count) {
+  try {
+    const txt = (count && count > 0) ? String(count) : '';
+    await browser.browserAction.setBadgeText({ text: txt });
+    await browser.browserAction.setBadgeBackgroundColor({ color: '#d00' });
+  } catch (e) { /* ignore when API unavailable */ }
+}
+
+async function incrementBadge() {
+  try {
+    const s = await browser.storage.local.get('badgeCount');
+    const c = Number(s.badgeCount) || 0;
+    const nc = c + 1;
+    await browser.storage.local.set({ badgeCount: nc });
+    await setBadge(nc);
+  } catch (e) { console.warn('incrementBadge failed', e); }
+}
+
+async function clearBadge() {
+  try {
+    await browser.storage.local.set({ badgeCount: 0 });
+    await setBadge(0);
+  } catch (e) { console.warn('clearBadge failed', e); }
+}
+
 async function checkAll(force = false) {
   
   // load global interval (in minutes) from storage; default to 60
@@ -254,6 +280,7 @@ async function checkAll(force = false) {
                 title: `Price update: ${title}`,
                 message: body
               });
+              try { incrementBadge().catch(()=>{}); } catch(e) {}
             }
           } catch (e) {
             // fallback: treat as change
@@ -271,6 +298,7 @@ async function checkAll(force = false) {
               title: `Price update: ${title}`,
               message: body
             });
+              try { incrementBadge().catch(()=>{}); } catch(e) {}
           }
         } else {
           // Save lastChecked even if price/text unchanged
@@ -321,6 +349,10 @@ browser.runtime.onMessage.addListener(async (msg) => {
       const res = normalizePriceString(msg.raw);
       return res;
     } catch (e) { return { raw: msg.raw, price: null }; }
+  }
+  if (msg.action === 'clearBadge') {
+    try { await clearBadge(); } catch(e) {}
+    return { cleared: true };
   }
   if (msg.action === 'manualSelectResult' && msg.item) {
     try {
