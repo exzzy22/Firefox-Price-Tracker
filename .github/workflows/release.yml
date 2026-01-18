@@ -88,26 +88,25 @@ jobs:
 
       - name: Sign XPI with AMO (JWT)
         env:
-          WEB_EXT_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
-          WEB_EXT_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          # Accept either the new WEB_EXT_* secrets or legacy AMO_* names
+          WEB_EXT_JWT_ISSUER: ${{ secrets.WEB_EXT_JWT_ISSUER || secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_JWT_SECRET: ${{ secrets.WEB_EXT_JWT_SECRET || secrets.AMO_JWT_SECRET }}
         run: |
           set -euo pipefail
           # If secrets missing, skip AMO submission but continue (we still upload the built ZIP to GitHub)
           if [ -z "${WEB_EXT_JWT_ISSUER:-}" ] || [ -z "${WEB_EXT_JWT_SECRET:-}" ]; then
-            echo "INFO: AMO JWT secrets not set (AMO_JWT_ISSUER / AMO_JWT_SECRET). Skipping AMO submission."
+            echo "INFO: AMO JWT secrets not set (WEB_EXT_JWT_ISSUER / WEB_EXT_JWT_SECRET). Skipping AMO submission."
           else
-            echo "Attempting to submit to AMO for signing (we will not download the signed XPI)"
+            echo "Attempting to submit to AMO for signing (artifacts will be written to signed/)"
             echo "Looking for built XPI in build/"
             ls -la build || true
             XPI_TO_SIGN="$(ls build/*.xpi 2>/dev/null | head -n1 || true)"
-            # Some versions of `web-ext` do not accept a `--xpi` flag; submit the source-dir
-            # to AMO instead (this will submit the same packaged data and ensures icons are included).
             echo "Submitting source-dir to AMO for signing (artifacts will be written to signed/)"
             # run sign and do not fail the job if AMO reports a conflict or other non-fatal error
-            npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel unlisted --source-dir . --artifacts-dir signed 2>&1 | tee webext-sign.log || true
+            # Use `listed` channel so AMO receives a listed submission (requires proper AMO credentials)
+            npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel listed --source-dir . --artifacts-dir signed 2>&1 | tee webext-sign.log || true
             echo "--- web-ext sign log (tail) ---"
             tail -n 200 webext-sign.log || true
-            echo "Note: we do not download or attach the signed XPI in this workflow."
           fi
 
       - name: Create GitHub Release
@@ -132,5 +131,21 @@ jobs:
           asset_path: ${{ env.ZIPNAME }}
           asset_name: ${{ env.ZIPNAME }}
           asset_content_type: application/zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+
+      - name: Upload signed XPI(s) to release (if present)
+        run: |
+          set -euo pipefail
+          echo "Looking for signed/*.xpi files to upload"
+          ls -la signed || true
+          if compgen -G "signed/*.xpi" > /dev/null; then
+            for f in signed/*.xpi; do
+              echo "Uploading $f to release $TAG"
+              gh release upload "$TAG" "$f" --repo "$GITHUB_REPOSITORY" || true
+            done
+          else
+            echo "No signed XPI files found; skipping."
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
