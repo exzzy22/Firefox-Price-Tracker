@@ -147,6 +147,40 @@ test('findPriceOnPage: preferred selector wins', () => {
   assert.equal(hit!.price, 42);
 });
 
+test('findPriceOnPage: WooCommerce product page', () => {
+  const html = `<html><body>
+    <p class="price"><span class="woocommerce-Price-amount amount"><bdi><span class="woocommerce-Price-currencySymbol">€</span>1,395.00</bdi></span></p>
+    <form class="cart" method="post"><button type="submit">Add to cart</button></form>
+  </body></html>`;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const hit = PL.findPriceOnPage(doc as unknown as Document, { hostname: 'shop.test' });
+  assert.ok(hit);
+  assert.equal(hit!.price, 1395);
+});
+
+test('findPriceOnPage: WooCommerce sale price prefers ins over del', () => {
+  const html = `<html><body>
+    <p class="price">
+      <del><span class="woocommerce-Price-amount amount"><bdi>€2,000.00</bdi></span></del>
+      <ins><span class="woocommerce-Price-amount amount"><bdi>€1,395.00</bdi></span></ins>
+    </p>
+    <form class="cart" method="post"><button>Add to cart</button></form>
+  </body></html>`;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const hit = PL.findPriceOnPage(doc as unknown as Document, { hostname: 'shop.test' });
+  assert.ok(hit);
+  assert.equal(hit!.price, 1395);
+});
+
+test('findPriceOnPage: WooCommerce selector ignored without form.cart', () => {
+  const html = `<html><body>
+    <span class="woocommerce-Price-amount"><bdi>€1,395.00</bdi></span>
+  </body></html>`;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const hit = PL.findPriceOnPage(doc as unknown as Document, { hostname: 'shop.test' });
+  assert.equal(hit, null);
+});
+
 test('findPriceInHtml: parses full HTML string', () => {
   const html = `<!doctype html><html><body>
     <div itemscope itemtype="https://schema.org/Product">

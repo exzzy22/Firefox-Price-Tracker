@@ -5,6 +5,11 @@ import type { FindPriceOptions, NormalizedPrice, PriceHit } from './types.js';
 export const CURRENCY_RE = /[$£€¥]\s?\d[\d,.\s]*/;
 export const CURRENCY_RE_G = /[$£€¥]\s?\d[\d,.\s]*/g;
 
+export const WOOCOMMERCE_SELECTORS: readonly string[] = [
+  'ins .woocommerce-Price-amount',
+  '.woocommerce-Price-amount',
+];
+
 export const AMAZON_SELECTORS: readonly string[] = [
   '#priceblock_ourprice',
   '#priceblock_dealprice',
@@ -169,6 +174,7 @@ export function isProductPage(doc: Document): boolean {
   const ogType = doc.querySelector('meta[property="og:type"]');
   if (ogType && /product/i.test(ogType.getAttribute('content') ?? '')) return true;
   if (doc.querySelector('meta[property="product:price:amount"]')) return true;
+  if (doc.querySelector('form.cart') && doc.querySelector('.woocommerce-Price-amount')) return true;
   return false;
 }
 
@@ -196,12 +202,21 @@ export function findPriceOnPage(doc: Document, options: FindPriceOptions = {}): 
     }
   }
 
-  return findPriceInJsonLd(doc)
+  const structured = findPriceInJsonLd(doc)
     ?? findPriceInMicrodata(doc)
-    ?? findPriceInMeta(doc)
-    ?? (isProductPage(doc)
-      ? readPriceFromElement(doc.querySelector('[itemprop~=price], [itemprop=price]'))
-      : null);
+    ?? findPriceInMeta(doc);
+  if (structured) return structured;
+
+  if (doc.querySelector('form.cart') && doc.querySelector('.woocommerce-Price-amount')) {
+    for (const sel of WOOCOMMERCE_SELECTORS) {
+      const hit = readPriceFromElement(doc.querySelector(sel));
+      if (hit) return hit;
+    }
+  }
+
+  return isProductPage(doc)
+    ? readPriceFromElement(doc.querySelector('[itemprop~=price], [itemprop=price]'))
+    : null;
 }
 
 export function findPriceInHtml(html: string, options: FindPriceOptions = {}): PriceHit | null {
