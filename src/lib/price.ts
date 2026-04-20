@@ -6,8 +6,10 @@ export const CURRENCY_RE = /[$£€¥]\s?\d[\d,.\s]*/;
 export const CURRENCY_RE_G = /[$£€¥]\s?\d[\d,.\s]*/g;
 
 export const WOOCOMMERCE_SELECTORS: readonly string[] = [
-  'ins .woocommerce-Price-amount',
-  '.woocommerce-Price-amount',
+  'p.price ins .woocommerce-Price-amount',
+  'p.price .woocommerce-Price-amount:not(del .woocommerce-Price-amount)',
+  '.summary .price ins .woocommerce-Price-amount',
+  '.summary .price .woocommerce-Price-amount:not(del .woocommerce-Price-amount)',
 ];
 
 export const AMAZON_SELECTORS: readonly string[] = [
