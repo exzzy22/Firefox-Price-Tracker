@@ -1,10 +1,15 @@
-name: Package Firefox extension
+name: Release
+
+# Builds the extension and attaches the zip to a GitHub release. AMO
+# submission is deliberately not automated — uploads to
+# https://addons.mozilla.org/developers/ are done manually so each
+# version gets an explicit review before it ships to users.
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v1.0.0)"
+        description: "Release tag (e.g. v0.1.13)"
         required: true
       name:
         description: "Release name (optional)"
@@ -12,140 +17,67 @@ on:
   push:
     tags:
       - "v*"
-    branches:
-      - master
+
+permissions:
+  contents: write
 
 jobs:
-  package:
-    name: Build and publish XPI
+  release:
+    name: Build and publish zip
     runs-on: ubuntu-latest
-    if: >-
-      startsWith(github.ref, 'refs/tags/') ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && contains(github.event.head_commit.message, '[release]'))
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Determine tag and names
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint built extension
+        run: npx web-ext lint --source-dir dist
+
+      - name: Package extension
+        run: npx web-ext build --source-dir dist --artifacts-dir build --overwrite-dest
+
+      - name: Resolve tag and version
+        id: meta
         run: |
-          if [ -n "${{ github.event.inputs.tag }}" ]; then TAG="${{ github.event.inputs.tag }}"; else TAG="${GITHUB_REF##*/}"; fi
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF##*/}"
+          fi
           NAME="${{ github.event.inputs.name }}"
-          if [ -z "$NAME" ]; then NAME="$TAG"; fi
-          ZIPNAME="FirefoxPriceTracker-${TAG}.zip"
-          echo "TAG=$TAG" >> $GITHUB_ENV
-          echo "NAME=$NAME" >> $GITHUB_ENV
-          echo "ZIPNAME=$ZIPNAME" >> $GITHUB_ENV
+          [ -z "$NAME" ] && NAME="$TAG"
+          ZIP_PATH="$(ls build/*.zip | head -n1)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "zip_path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
 
-      - name: Ensure zip is available
-        run: sudo apt-get update && sudo apt-get install -y zip
-
-      - name: Create ZIP package
-        run: |
-          rm -f "$ZIPNAME"
-          zip -r "$ZIPNAME" . -x ".github/*" ".git/*" "README.md" "LICENSE" ".gitignore" ".vscode/*"
-
-      - name: Install web-ext
-        run: npm install --global web-ext
-
-      - name: Show files and icons (debug)
-        run: |
-          echo "--- root listing ---"
-          ls -la
-          echo "--- icons listing ---"
-          ls -la icons || true
-          echo "--- find icon files ---"
-          find . -maxdepth 3 -name 'icon-*.png' || true
-          echo "--- manifest ---"
-          cat manifest.json || true
-
-      - name: Build extension with web-ext (debug)
-        run: |
-          if command -v web-ext >/dev/null 2>&1; then
-            web-ext build --source-dir . --artifacts-dir build || npx web-ext build --source-dir . --artifacts-dir build
-          else
-            npx web-ext build --source-dir . --artifacts-dir build
-          fi
-          echo "Built artifacts:"; ls -la build || true
-
-      - name: Ensure built artifact is XPI
-        run: |
-          # If web-ext produced a .zip, convert/rename it to .xpi so signing uses the packaged artifact
-          set -euo pipefail
-          ZIPFILE=$(ls build/*.zip 2>/dev/null | head -n1 || true)
-          if [ -n "$ZIPFILE" ]; then
-            XPIFILE="${ZIPFILE%.zip}.xpi"
-            if [ ! -f "$XPIFILE" ]; then
-              echo "Renaming $ZIPFILE -> $XPIFILE"
-              mv "$ZIPFILE" "$XPIFILE"
-            else
-              echo "XPI already exists: $XPIFILE"
-            fi
-          else
-            echo "No build/*.zip found; leaving build/ as-is"
-          fi
-          echo "build/ contents:"; ls -la build || true
-
-      - name: Sign XPI with AMO (JWT)
+      - name: Create or update GitHub release
         env:
-          # Accept either the new WEB_EXT_* secrets or legacy AMO_* names
-          WEB_EXT_JWT_ISSUER: ${{ secrets.WEB_EXT_JWT_ISSUER || secrets.AMO_JWT_ISSUER }}
-          WEB_EXT_JWT_SECRET: ${{ secrets.WEB_EXT_JWT_SECRET || secrets.AMO_JWT_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # If secrets missing, skip AMO submission but continue (we still upload the built ZIP to GitHub)
-          if [ -z "${WEB_EXT_JWT_ISSUER:-}" ] || [ -z "${WEB_EXT_JWT_SECRET:-}" ]; then
-            echo "INFO: AMO JWT secrets not set (WEB_EXT_JWT_ISSUER / WEB_EXT_JWT_SECRET). Skipping AMO submission."
+          TAG="${{ steps.meta.outputs.tag }}"
+          NAME="${{ steps.meta.outputs.name }}"
+          ZIP="${{ steps.meta.outputs.zip_path }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP" --clobber
           else
-            echo "Attempting to submit to AMO for signing (artifacts will be written to signed/)"
-            echo "Looking for built XPI in build/"
-            ls -la build || true
-            XPI_TO_SIGN="$(ls build/*.xpi 2>/dev/null | head -n1 || true)"
-            echo "Submitting source-dir to AMO for signing (artifacts will be written to signed/)"
-            # run sign and do not fail the job if AMO reports a conflict or other non-fatal error
-            # Use `listed` channel so AMO receives a listed submission (requires proper AMO credentials)
-            npx web-ext sign --api-key "$WEB_EXT_JWT_ISSUER" --api-secret "$WEB_EXT_JWT_SECRET" --channel listed --source-dir . --artifacts-dir signed 2>&1 | tee webext-sign.log || true
-            echo "--- web-ext sign log (tail) ---"
-            tail -n 200 webext-sign.log || true
+            gh release create "$TAG" "$ZIP" --title "$NAME" --generate-notes
           fi
-
-      - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
-        with:
-          tag_name: ${{ env.TAG }}
-          release_name: ${{ env.NAME }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
-
-      - name: Skip AMO listing update
-        run: |
-          echo "AMO listing update step removed; no API calls will be made from CI."
-
-      - name: Upload ZIP to release
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ env.ZIPNAME }}
-          asset_name: ${{ env.ZIPNAME }}
-          asset_content_type: application/zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
-
-      - name: Upload signed XPI(s) to release (if present)
-        run: |
-          set -euo pipefail
-          echo "Looking for signed/*.xpi files to upload"
-          ls -la signed || true
-          if compgen -G "signed/*.xpi" > /dev/null; then
-            for f in signed/*.xpi; do
-              echo "Uploading $f to release $TAG"
-              gh release upload "$TAG" "$f" --repo "$GITHUB_REPOSITORY" || true
-            done
-          else
-            echo "No signed XPI files found; skipping."
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}

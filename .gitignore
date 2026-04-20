@@ -1,12 +1,13 @@
 node_modules/
 .venv/
 dist/
+build/
+web-ext-artifacts/
 .DS_Store
 *.log
-web-ext-artifacts/
-/.vscode/
 *.pyc
 __pycache__/
-/.env
+/.vscode/
 /.idea/
-build/
+/.env
+/.claude/

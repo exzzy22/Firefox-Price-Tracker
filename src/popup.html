@@ -3,57 +3,43 @@
 <head>
   <meta charset="utf-8" />
   <title>Price Tracker</title>
-  <!-- Bootstrap CSS for improved UI -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    :root{
-      --bg: #0f172a;
-      --muted: #6b7280;
-      --card: #ffffff;
-      --surface: #f8fafc;
-      --accent: #2563eb; /* blue-600 */
-      --accent-600:#1d4ed8;
-      --danger: #dc2626;
-      font-family: Inter, system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
-      color: var(--bg);
-    }
-    body{width:460px;padding:14px;margin:0;background:linear-gradient(180deg,#f8fbff,white)}
-    h3{margin:0 0 10px;font-size:17px;color:var(--accent-600)}
-    .controls{display:flex;gap:8px;align-items:center}
-    button{border-radius:8px}
-    .btn-primary{background:linear-gradient(180deg,var(--accent),var(--accent-600));border:none}
-    .btn-outline-secondary{border:1px solid #e6eef5;background:transparent;color:var(--bg)}
-    #current{margin:12px 0;padding:12px;border-radius:10px;background:var(--card);box-shadow:0 6px 18px rgba(16,24,40,0.06);border:1px solid rgba(14,165,233,0.03)}
-    .price{font-weight:700;color:var(--danger)}
-    #list{margin-top:8px;display:flex;flex-direction:column;gap:10px;max-height:300px;overflow:auto}
-    .item{background:var(--card);padding:10px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;box-shadow:0 6px 12px rgba(2,6,23,0.04)}
-    .meta{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
-    .title{font-size:13px;color:var(--bg);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .small{font-size:12px;color:var(--muted)}
-    .actions{display:flex;gap:6px}
-    .price-col{min-width:150px;display:flex;align-items:center;justify-content:flex-end;padding-left:14px;border-left:1px solid #f1f5f9}
-    .price-col .price{margin-left:8px;margin-right:12px}
-    .price-col .actions{margin-left:6px}
-    .price-col .actions button{margin-left:6px}
-    a{color:inherit}
-  </style>
+  <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
-  <h3>Price Tracker</h3>
-  <div class="controls">
-    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
-      <button id="refreshBtn" title="Refresh checks" class="secondary btn btn-outline-secondary btn-sm">Refresh <span id="refreshSpinner" class="spinner-border spinner-border-sm" role="status" style="display:none;margin-left:8px"></span></button>
-      <button id="pickBtn" class="btn btn-outline-secondary btn-sm">Manually track</button>
-      <button id="trackBtn" class="btn btn-primary btn-sm">Track</button>
-      <button id="openDetailsBtn" class="secondary btn btn-outline-secondary btn-sm">Open Details</button>
+<body class="popup">
+  <header class="header">
+    <h1 class="title">Price Tracker</h1>
+    <div class="header-actions">
+      <button id="openDetailsBtn" class="icon-btn" title="Open details" aria-label="Open details">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M10 20H4v-6M20 4 13 11M4 20l7-7"/></svg>
+      </button>
     </div>
-  </div>
-  <div id="refreshStatus" class="small text-muted" style="margin-top:6px"></div>
+  </header>
 
-  <div id="current">Loading current page...</div>
-  <div id="selectorNote" class="small text-muted" style="margin-top:6px"></div>
+  <section id="currentCard" class="card current" aria-live="polite">
+    <div class="card-body">
+      <div id="currentTitle" class="product-title">Loading current page…</div>
+      <div id="currentPrice" class="product-price"></div>
+      <div id="selectorNote" class="note"></div>
+    </div>
+    <div class="card-actions">
+      <button id="pickBtn" class="btn btn-secondary">Pick element</button>
+      <button id="trackBtn" class="btn btn-primary">Track price</button>
+    </div>
+  </section>
 
-  <div id="list" aria-live="polite">(none)</div>
+  <section class="list-section">
+    <div class="list-header">
+      <h2 class="section-title">Tracked</h2>
+      <button id="refreshBtn" class="btn btn-ghost">
+        <span id="refreshSpinner" class="spinner" hidden></span>
+        <span id="refreshLabel">Refresh</span>
+      </button>
+    </div>
+    <div id="refreshStatus" class="note"></div>
+    <div id="list" class="list" aria-live="polite">
+      <div class="empty">(none)</div>
+    </div>
+  </section>
 
   <script src="popup.js"></script>
 </body>

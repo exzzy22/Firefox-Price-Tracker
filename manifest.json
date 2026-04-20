@@ -1,12 +1,15 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "name": "Price Tracker",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Track product prices and get notified when they change.",
-  "permissions": ["storage", "alarms", "notifications", "activeTab", "tabs", "<all_urls>"],
-  "background": { "scripts": ["src/background.js"], "persistent": false },
-  "browser_action": {
-    "default_popup": "src/popup.html",
+  "permissions": ["storage", "alarms", "notifications", "activeTab", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "scripts": ["dist/background.js"]
+  },
+  "action": {
+    "default_popup": "dist/popup.html",
     "default_icon": {
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png",
@@ -22,7 +25,7 @@
   },
   "browser_specific_settings": {
     "gecko": {
-    "id": "Firefox-Price-Tracker@exzzy22",
+      "id": "Firefox-Price-Tracker@exzzy22",
       "strict_min_version": "142.0",
       "data_collection_permissions": {
         "required": ["none"],
@@ -34,8 +37,8 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["src/content_script.js"],
-      "all_frames": true,
+      "js": ["dist/content_script.js"],
+      "all_frames": false,
       "run_at": "document_idle"
     }
   ]

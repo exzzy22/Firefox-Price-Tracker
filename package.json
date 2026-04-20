@@ -1,0 +1,26 @@
+{
+  "name": "firefox-price-tracker",
+  "version": "0.1.13",
+  "description": "Track product prices and get notified when they change.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "clean": "node -e \"import('node:fs/promises').then(fs => fs.rm('dist', { recursive: true, force: true }))\"",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "build": "node build.mjs",
+    "build:watch": "node build.mjs --watch",
+    "lint": "npm run build && web-ext lint --source-dir dist",
+    "start": "npm run build && web-ext run --source-dir dist",
+    "package": "npm run build && web-ext build --source-dir dist --artifacts-dir build --overwrite-dest"
+  },
+  "devDependencies": {
+    "@types/firefox-webext-browser": "^120.0.4",
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.24.0",
+    "happy-dom": "^15.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "web-ext": "^8.3.0"
+  }
+}
