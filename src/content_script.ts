@@ -40,6 +40,19 @@ function findProductImage(): string | null {
       }
     } catch { /* ignore malformed JSON-LD */ }
   }
+  const tw = document.querySelector('meta[name="twitter:image"]');
+  const twUrl = tw?.getAttribute('content');
+  if (twUrl && /^https?:\/\//i.test(twUrl)) return twUrl;
+
+  // Amazon: main product image lives in #landingImage; og/twitter tags are absent or unusable
+  if (document.querySelector('#productTitle')) {
+    const amzImg = document.querySelector<HTMLImageElement>(
+      '#landingImage[src], #imgTagWrappingDiv img[src], #main-image-container img[src]'
+    );
+    const amzUrl = amzImg?.getAttribute('data-old-hires') || amzImg?.getAttribute('src');
+    if (amzUrl && /^https?:\/\//i.test(amzUrl)) return amzUrl;
+  }
+
   return null;
 }
 
