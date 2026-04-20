@@ -156,6 +156,7 @@ async function saveManualPick(pick: {
   raw: string;
   price: number | null;
   selector: string | null;
+  image?: string | null;
 }): Promise<void> {
   const { tracked } = await browser.storage.local.get('tracked');
   const list: TrackedItem[] = tracked ?? [];
@@ -167,6 +168,7 @@ async function saveManualPick(pick: {
     lastPrice: norm.price ?? pick.price ?? null,
     lastRaw: norm.raw || String(pick.raw ?? ''),
     selector: pick.selector ?? null,
+    image: pick.image ?? null,
     updatedAt: now,
     lastChecked: now,
     history: []
@@ -178,6 +180,7 @@ async function saveManualPick(pick: {
     existing.lastPrice = item.lastPrice;
     existing.lastRaw = item.lastRaw;
     existing.selector = item.selector;
+    if (item.image) existing.image = item.image;
     existing.updatedAt = item.updatedAt;
     existing.lastChecked = item.lastChecked;
     appendHistory(existing, { ts: now, price: item.lastPrice, raw: item.lastRaw });

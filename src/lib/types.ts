@@ -23,6 +23,7 @@ export interface TrackedItem {
   lastPrice: number | null;
   lastRaw: string;
   selector: string | null;
+  image?: string | null;
   updatedAt: number;
   lastChecked: number;
   history: HistoryEntry[];
@@ -33,6 +34,7 @@ export interface LastDetected {
   price: number;
   raw: string;
   title: string | null;
+  image?: string | null;
   updatedAt: number;
 }
 
@@ -60,6 +62,7 @@ export interface ManualSelectResultMessage {
     raw: string;
     price: number | null;
     title: string | null;
+    image?: string | null;
   };
 }
 
@@ -76,6 +79,7 @@ export interface GetPriceResponse {
   price?: number;
   raw?: string;
   title?: string | null;
+  image?: string | null;
 }
 
 export interface StartSelectResponse {

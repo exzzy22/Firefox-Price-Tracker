@@ -10,6 +10,7 @@ interface Current {
   price: number | null;
   raw: string;
   title: string | null;
+  image?: string | null;
 }
 
 let activeTab: browser.tabs.Tab | null = null;
@@ -65,7 +66,7 @@ async function fetchCurrent(): Promise<Current | null> {
   try {
     const resp = await browser.tabs.sendMessage(activeTab.id, { action: 'getPrice' });
     if (resp && resp.price != null) {
-      return { price: resp.price, raw: resp.raw, title: resp.title ?? activeTab.title ?? null };
+      return { price: resp.price, raw: resp.raw, title: resp.title ?? activeTab.title ?? null, image: resp.image };
     }
   } catch {
     // content script may not be injected (e.g. extension pages)
@@ -76,7 +77,8 @@ async function fetchCurrent(): Promise<Current | null> {
     return {
       price: lastDetected.price,
       raw: lastDetected.raw,
-      title: lastDetected.title ?? activeTab.title ?? null
+      title: lastDetected.title ?? activeTab.title ?? null,
+      image: lastDetected.image
     };
   }
   return null;
@@ -177,6 +179,7 @@ async function trackCurrent(): Promise<void> {
     lastPrice: finalPrice,
     lastRaw: finalRaw,
     selector: activeSelector ?? null,
+    image: currentDetected.image ?? null,
     updatedAt: ts,
     lastChecked: ts,
     history: [{ ts, price: finalPrice, raw: finalRaw }]

@@ -19,6 +19,30 @@ function detect() {
   return findPriceOnPage(document, { hostname: location.hostname });
 }
 
+function findProductImage(): string | null {
+  const og = document.querySelector('meta[property="og:image"]');
+  const ogUrl = og?.getAttribute('content');
+  if (ogUrl && /^https?:\/\//i.test(ogUrl)) return ogUrl;
+  for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+    try {
+      const parsed = JSON.parse(s.textContent ?? '') as unknown;
+      const objs = Array.isArray(parsed) ? parsed : [parsed];
+      for (const obj of objs) {
+        if (!obj || typeof obj !== 'object') continue;
+        const o = obj as Record<string, unknown>;
+        const graphs: unknown[] = Array.isArray(o['@graph']) ? (o['@graph'] as unknown[]) : [];
+        for (const node of [o, ...graphs]) {
+          if (!node || typeof node !== 'object') continue;
+          const img = (node as Record<string, unknown>).image;
+          const url = Array.isArray(img) ? img[0] : img;
+          if (typeof url === 'string' && /^https?:\/\//i.test(url)) return url;
+        }
+      }
+    } catch { /* ignore malformed JSON-LD */ }
+  }
+  return null;
+}
+
 function findTitle(): string | null {
   const prod = document.querySelector('#productTitle');
   if (prod?.textContent?.trim()) return prod.textContent.trim();
@@ -40,6 +64,7 @@ function persistLastDetected(): void {
       price: detected.price,
       raw: detected.raw,
       title: findTitle(),
+      image: findProductImage(),
       updatedAt: Date.now()
     }
   }).catch(() => { /* best-effort persistence */ });
@@ -168,7 +193,7 @@ function startPicker(): Promise<StartSelectResponse> {
       const result: StartSelectResponse = { selector, raw, price, title };
       browser.runtime.sendMessage({
         action: 'manualSelectResult',
-        item: { url: location.href, selector, raw, price, title }
+        item: { url: location.href, selector, raw, price, title, image: findProductImage() }
       }).catch(() => { /* best-effort persist from content */ });
       resolve(result);
     };
@@ -195,7 +220,7 @@ browser.runtime.onMessage.addListener((msg: Message) => {
   if (!msg || typeof msg !== 'object') return;
   if (msg.action === 'getPrice') {
     const hit = detect();
-    if (hit) return Promise.resolve({ price: hit.price, raw: hit.raw, title: findTitle() });
+    if (hit) return Promise.resolve({ price: hit.price, raw: hit.raw, title: findTitle(), image: findProductImage() });
     return waitForDynamicPrice(1200);
   }
   if (msg.action === 'startSelect') {

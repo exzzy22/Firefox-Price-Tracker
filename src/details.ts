@@ -83,6 +83,15 @@ function renderCard(item: TrackedItem): HTMLElement {
   const row = document.createElement('div');
   row.className = 'details-card-row';
 
+  if (item.image) {
+    const img = document.createElement('img');
+    img.className = 'product-img';
+    img.src = item.image;
+    img.alt = '';
+    img.addEventListener('error', () => { img.hidden = true; });
+    row.appendChild(img);
+  }
+
   const meta = document.createElement('div');
   const title = document.createElement('a');
   title.className = 'product-title';
