@@ -20,6 +20,13 @@ https://addons.mozilla.org/en-US/firefox/addon/firefox-price-tracker/
 - Per-item price history.
 - No tracking, no analytics, no remote resources.
 
+## Screenshots
+
+| Popup | Details |
+|-------|---------|
+| ![Popup light](screenshots/Pop-up-light-mode.png) | ![Details light](screenshots/Details-page-light-mode.png) |
+| ![Popup dark](screenshots/Pop-up-dark-mode.png) | ![Details dark](screenshots/Details-page-dark-mode.png) |
+
 ## Installation
 
 End users: install from the AMO link above.
