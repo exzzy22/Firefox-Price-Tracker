@@ -1,5 +1,4 @@
 node_modules/
-.venv/
 dist/
 build/
 web-ext-artifacts/
