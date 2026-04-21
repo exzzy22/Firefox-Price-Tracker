@@ -33,6 +33,7 @@ https://addons.mozilla.org/en-US/firefox/addon/firefox-price-tracker/
 |-------|---------|
 | ![Popup light](screenshots/Pop-up-light-mode.png) | ![Details light](screenshots/Details-page-light-mode.png) |
 | ![Popup dark](screenshots/Pop-up-dark-mode.png) | ![Details dark](screenshots/Details-page-dark-mode.png) |
+| ![Popup Android dark](screenshots/Pop-up-android-dark-mode.jpg) | ![Details Android dark](screenshots/Details-page-android-dark-mode.jpg) |
 
 ## Installation
 
