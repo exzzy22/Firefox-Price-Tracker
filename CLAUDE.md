@@ -9,7 +9,8 @@ published on AMO:
 https://addons.mozilla.org/en-US/firefox/addon/firefox-price-tracker/
 
 Owner: `exzzy`. Add-on ID: `Firefox-Price-Tracker@exzzy22`. Public
-GitHub repo.
+GitHub repo. Ships on Firefox desktop and Firefox for Android (Fenix
+142+ via `gecko_android` in the manifest).
 
 It detects a product price on the current page, lets the user track it,
 and notifies them when the price changes.
@@ -84,11 +85,16 @@ The content script (and the background HTML parser) only accept a price
 when at least one of these signals exists on the page:
 
 1. An explicit user-picked selector (`TrackedItem.selector`).
-2. A known Amazon product container + Amazon selectors.
+2. A known Amazon product container (any of `AMAZON_PRODUCT_PAGE_SIGNALS`,
+   which covers both desktop `#productTitle` and mobile
+   `#corePriceDisplay_mobile_feature_div`) + Amazon selectors.
 3. JSON-LD with `Product` / `Offer`.
 4. Microdata inside an `itemscope itemtype*="Product"` scope.
 5. `<meta property="product:price:amount">` or equivalent.
-6. `[itemprop=price]` **plus** a page-level product signal from
+6. WooCommerce: `form.cart` **plus** `.woocommerce-Price-amount` on
+   the page, selected via `p.price` / `.summary .price` to avoid
+   add-on/variation noise.
+7. `[itemprop=price]` **plus** a page-level product signal from
    `isProductPage`.
 
 There is **no body-text currency fallback**. If you add one you will
@@ -97,15 +103,33 @@ deliberately removed. The regression test is in
 [tests/price.test.ts](tests/price.test.ts) — "findPriceOnPage: returns
 null for a non-product page with currency text".
 
+### JS-rendered pages
+
+Some sites render prices client-side; the background `fetch()` only sees
+the raw HTML. `findPriceInHtml` returns null in that case and
+[src/background.ts](src/background.ts) increments the item's
+`failedChecks` counter. Two consecutive failures surface as a
+red strikethrough in the popup list and a warning in the details card.
+
+The content script compensates by caching the tracked selector for the
+current URL and watching DOM mutations for up to 8s after load; when the
+price finally appears it updates the tracked item in storage (no
+notification — background checks are still the canonical notify path).
+
 ### Storage schema (`browser.storage.local`)
 
 See [src/lib/types.ts](src/lib/types.ts) for the canonical types. Summary:
 
-- `tracked: TrackedItem[]` — the user's watched products
+- `tracked: TrackedItem[]` — the user's watched products (includes
+  optional `image`, `failedChecks`)
 - `checkIntervalMinutes: number` — global, default 60
 - `badgeCount: number` — unread price-change notifications
 - `normalizedV2: boolean` — migration flag; do not reuse this key
 - `lastDetected: LastDetected` — written by content script on product pages only
+
+Storage is **device-local** (not synced across Firefox accounts). Adding
+sync would require fitting in `storage.sync`'s 100 KB / 8 KB-per-key
+quota; price history makes that hard, so we intentionally don't.
 
 ### Message contract (`browser.runtime.sendMessage`)
 
@@ -127,6 +151,24 @@ npm run package      # build + produce build/price_tracker-<version>.zip
 
 `npm run build:watch` keeps esbuild running on file change (useful with
 `npm start` in another terminal, reloading the extension manually).
+
+### Testing on Android
+
+1. Enable USB debugging + "Remote debugging via USB" in Firefox Android
+   (Settings → Advanced).
+2. Connect over ADB (USB or Wi-Fi): `adb connect <ip>:<port>`.
+3. Run:
+   ```
+   npx web-ext run --target=firefox-android \
+     --adb-device <id> --firefox-apk org.mozilla.firefox \
+     --source-dir dist
+   ```
+4. From desktop `about:debugging` → the phone → Inspect the extension for
+   a remote console on the background event page.
+
+The touch picker (`startTouchPicker` in
+[src/content_script.ts](src/content_script.ts)) is selected via
+`matchMedia('(pointer: coarse)')`. Desktop keeps the hover picker.
 
 ## Release
 

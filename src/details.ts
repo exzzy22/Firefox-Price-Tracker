@@ -20,6 +20,13 @@ function formatTimestamp(ts: number | null | undefined): string {
   return new Date(ts).toLocaleString();
 }
 
+async function openTab(url: string): Promise<void> {
+  const tab = await browser.tabs.create({ url, active: true });
+  if (tab?.id != null) {
+    try { await browser.tabs.update(tab.id, { active: true }); } catch { /* ignore */ }
+  }
+}
+
 function setStatus(text: string, timeoutMs?: number): void {
   const el = $('detailsStatus');
   el.textContent = text;
@@ -93,13 +100,14 @@ function renderCard(item: TrackedItem): HTMLElement {
   }
 
   const meta = document.createElement('div');
+  meta.className = 'card-body';
   const title = document.createElement('a');
   title.className = 'product-title';
   title.href = '#';
   title.textContent = item.title || item.url;
   title.addEventListener('click', e => {
     e.preventDefault();
-    browser.tabs.create({ url: item.url });
+    openTab(item.url);
   });
   const url = document.createElement('div');
   url.className = 'product-url';
@@ -108,7 +116,12 @@ function renderCard(item: TrackedItem): HTMLElement {
   metaRow.className = 'meta-row';
   if (item.updatedAt) metaRow.appendChild(span(`Updated: ${formatTimestamp(item.updatedAt)}`));
   if (item.lastChecked) metaRow.appendChild(span(`Last checked: ${formatTimestamp(item.lastChecked)}`));
-  if (item.selector) metaRow.appendChild(span(`Selector: ${item.selector}`));
+  if ((item.failedChecks ?? 0) >= 2) {
+    const warn = document.createElement('span');
+    warn.className = 'check-warn';
+    warn.textContent = `Auto-check failed ${item.failedChecks}× — open the page to refresh`;
+    metaRow.appendChild(warn);
+  }
   meta.appendChild(title);
   meta.appendChild(url);
   meta.appendChild(metaRow);
@@ -120,7 +133,7 @@ function renderCard(item: TrackedItem): HTMLElement {
 
   const btns = document.createElement('div');
   btns.className = 'card-btns';
-  const openBtn = button('Open', 'btn btn-secondary', () => browser.tabs.create({ url: item.url }));
+  const openBtn = button('Open', 'btn btn-secondary', () => openTab(item.url));
   const histBtn = button('Show history', 'btn btn-secondary');
   const removeBtn = button('Remove', 'btn btn-secondary btn-danger', () => removeItem(item.url));
   btns.appendChild(openBtn);
@@ -209,6 +222,12 @@ function init(): void {
   $('saveIntervalBtn').addEventListener('click', saveInterval);
   loadInterval();
   loadList();
+
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.tracked) {
+      loadList().catch(() => { /* ignore */ });
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

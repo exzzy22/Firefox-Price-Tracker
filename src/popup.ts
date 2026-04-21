@@ -54,6 +54,14 @@ async function getActiveTab(): Promise<browser.tabs.Tab | null> {
   return tabs[0] ?? null;
 }
 
+async function openTab(url: string): Promise<void> {
+  // On Firefox Android the popup sheet keeps focus even after tabs.create,
+  // so the new tab lands in the background. Closing the popup first lets
+  // the fresh tab become active.
+  browser.tabs.create({ url, active: true }).catch(() => { /* ignore */ });
+  window.close();
+}
+
 async function fetchCurrent(): Promise<Current | null> {
   activeTab = await getActiveTab();
   if (!activeTab?.id) return null;
@@ -64,7 +72,10 @@ async function fetchCurrent(): Promise<Current | null> {
   if (existing?.selector) activeSelector = existing.selector;
 
   try {
-    const resp = await browser.tabs.sendMessage(activeTab.id, { action: 'getPrice' });
+    const resp = await Promise.race([
+      browser.tabs.sendMessage(activeTab.id, { action: 'getPrice' }),
+      new Promise<undefined>(r => setTimeout(() => r(undefined), 2000))
+    ]);
     if (resp && resp.price != null) {
       return { price: resp.price, raw: resp.raw, title: resp.title ?? activeTab.title ?? null, image: resp.image };
     }
@@ -126,6 +137,7 @@ function renderItem(item: TrackedItem): HTMLElement {
   meta.className = 'list-item-meta';
   const title = document.createElement('div');
   title.className = 'list-item-title';
+  if ((item.failedChecks ?? 0) >= 2) title.classList.add('stale');
   title.textContent = compactTitle(item.title || item.url);
   meta.appendChild(title);
 
@@ -139,7 +151,7 @@ function renderItem(item: TrackedItem): HTMLElement {
   const openBtn = document.createElement('button');
   openBtn.className = 'btn btn-ghost';
   openBtn.textContent = 'Open';
-  openBtn.addEventListener('click', () => browser.tabs.create({ url: item.url }));
+  openBtn.addEventListener('click', () => openTab(item.url));
   const removeBtn = document.createElement('button');
   removeBtn.className = 'btn btn-ghost btn-danger';
   removeBtn.textContent = 'Remove';
@@ -188,6 +200,7 @@ async function trackCurrent(): Promise<void> {
     existing.lastPrice = newItem.lastPrice;
     existing.lastRaw = newItem.lastRaw;
     existing.updatedAt = ts;
+    existing.failedChecks = 0;
     existing.history = existing.history ?? [];
     existing.history.push({ ts, price: newItem.lastPrice, raw: newItem.lastRaw });
     if (activeSelector) existing.selector = activeSelector;
@@ -239,15 +252,21 @@ async function init(): Promise<void> {
   $('pickBtn').addEventListener('click', pickElement);
   $('refreshBtn').addEventListener('click', refresh);
   $('openDetailsBtn').addEventListener('click', () => {
-    browser.tabs.create({ url: browser.runtime.getURL('details.html') });
+    openTab(browser.runtime.getURL('details.html'));
   });
 
   browser.runtime.sendMessage({ action: 'clearBadge' }).catch(() => { /* ignored */ });
 
+  await loadTracked();
   const current = await fetchCurrent();
   renderCurrent(current);
   setSelectorNote();
-  await loadTracked();
+
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.tracked) {
+      loadTracked().catch(() => { /* ignore */ });
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

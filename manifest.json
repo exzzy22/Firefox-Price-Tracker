@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Price Tracker",
-  "version": "0.1.14",
+  "version": "0.2.0",
   "description": "Track product prices and get notified when they change.",
   "permissions": ["storage", "alarms", "notifications", "activeTab", "tabs"],
   "host_permissions": ["<all_urls>"],
@@ -32,6 +32,9 @@
         "optional": [],
         "other": ["This extension does not collect personal user data."]
       }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
     }
   },
   "content_scripts": [

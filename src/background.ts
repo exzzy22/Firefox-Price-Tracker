@@ -103,11 +103,16 @@ async function checkOne(item: TrackedItem, idx: number, force: boolean): Promise
     found = await fetchPrice(item);
   } catch (err) {
     console.warn('PriceTracker: fetch failed for', item.url, err);
+    item.failedChecks = (item.failedChecks ?? 0) + 1;
     return { checked: true, error: true };
   }
 
   item.lastChecked = Date.now();
-  if (!found) return { checked: true };
+  if (!found) {
+    item.failedChecks = (item.failedChecks ?? 0) + 1;
+    return { checked: true };
+  }
+  item.failedChecks = 0;
 
   const prevRaw = String(item.lastRaw ?? '').trim();
   const nextRaw = String(found.raw ?? '').trim();

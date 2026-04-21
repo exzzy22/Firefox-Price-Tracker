@@ -27,6 +27,10 @@ export interface TrackedItem {
   updatedAt: number;
   lastChecked: number;
   history: HistoryEntry[];
+  // Consecutive background-check failures. Reset to 0 when a price is found.
+  // When >= FAIL_WARN_THRESHOLD, the UI surfaces a warning so the user knows
+  // the item can't be auto-checked (typically a JS-rendered page).
+  failedChecks?: number;
 }
 
 export interface LastDetected {

@@ -1,7 +1,7 @@
 # Firefox Price Tracker
 
 A Firefox WebExtension that lets you track product prices and notifies you
-when they change.
+when they change. Runs on Firefox desktop and Firefox for Android.
 
 **Published on AMO:**
 https://addons.mozilla.org/en-US/firefox/addon/firefox-price-tracker/
@@ -11,13 +11,20 @@ https://addons.mozilla.org/en-US/firefox/addon/firefox-price-tracker/
 - Click the toolbar icon on any product page — if a price is found it's
   shown inline, one click tracks it.
 - Structured-data-only detection (JSON-LD `Product`, microdata,
-  OpenGraph `product:price:amount`, site-specific Amazon selectors).
-  Pages without a real product price are reported as such instead of
-  false-positive matches on any `$…` text.
-- Manual element picker for cases the auto-detector doesn't cover.
+  OpenGraph `product:price:amount`, WooCommerce `p.price` markup,
+  site-specific Amazon selectors). Pages without a real product price
+  are reported as such instead of false-positive matches on any `$…`
+  text.
+- Manual element picker with a hover flow on desktop and a tap →
+  Confirm bar on Android.
+- Works with JS-rendered product pages: the content script watches
+  for the price to be inserted and updates the tracked item whenever
+  you re-open the page.
 - Background checks every 60 minutes (configurable). Change →
-  notification + toolbar badge.
-- Per-item price history.
+  notification + toolbar badge. Pages the background can't fetch a
+  price from are flagged in the UI so you know to re-open them.
+- Per-item price history + thumbnail.
+- Runs on Firefox for Android (Fenix 142+) with the same code.
 - No tracking, no analytics, no remote resources.
 
 ## Screenshots

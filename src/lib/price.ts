@@ -21,7 +21,17 @@ export const AMAZON_SELECTORS: readonly string[] = [
   '.a-price .a-offscreen',
   '.priceToPay .a-offscreen',
   '#corePrice_feature_div .a-offscreen',
-  '#corePriceDisplay_desktop_feature_div .a-offscreen'
+  '#corePriceDisplay_desktop_feature_div .a-offscreen',
+  '#corePriceDisplay_mobile_feature_div .a-offscreen'
+];
+
+// Amazon product-page signals. #productTitle is desktop-only; mobile
+// uses the core price display feature divs instead, so we accept any.
+export const AMAZON_PRODUCT_PAGE_SIGNALS: readonly string[] = [
+  '#productTitle',
+  '#corePriceDisplay_desktop_feature_div',
+  '#corePriceDisplay_mobile_feature_div',
+  '#corePrice_feature_div'
 ];
 
 export function cleanNumber(input: unknown): number | null {
@@ -196,7 +206,7 @@ export function findPriceOnPage(doc: Document, options: FindPriceOptions = {}): 
     }
   }
 
-  if (hostname.includes('amazon.') && doc.querySelector('#productTitle')) {
+  if (hostname.includes('amazon.') && AMAZON_PRODUCT_PAGE_SIGNALS.some(sel => doc.querySelector(sel))) {
     for (const sel of AMAZON_SELECTORS) {
       const el = doc.querySelector(sel);
       const hit = readPriceFromElement(el);

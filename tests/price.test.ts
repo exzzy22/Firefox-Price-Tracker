@@ -181,6 +181,19 @@ test('findPriceOnPage: WooCommerce selector ignored without form.cart', () => {
   assert.equal(hit, null);
 });
 
+test('findPriceOnPage: Amazon mobile (no #productTitle)', () => {
+  const html = `<html><body>
+    <h1 id="title"><span>Mobile Product</span></h1>
+    <div id="corePriceDisplay_mobile_feature_div">
+      <span class="a-price"><span class="a-offscreen">$19.99</span></span>
+    </div>
+  </body></html>`;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const hit = PL.findPriceOnPage(doc as unknown as Document, { hostname: 'www.amazon.com' });
+  assert.ok(hit);
+  assert.equal(hit!.price, 19.99);
+});
+
 test('findPriceInHtml: parses full HTML string', () => {
   const html = `<!doctype html><html><body>
     <div itemscope itemtype="https://schema.org/Product">

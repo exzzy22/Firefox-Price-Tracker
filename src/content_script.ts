@@ -14,9 +14,29 @@ import type {
 
 const HIGHLIGHT_CLASS = '__price_picker_highlight';
 const PICKER_STYLE_ID = '__price_picker_style';
+const PICKER_BAR_ID = '__price_picker_bar';
+
+function isTouchDevice(): boolean {
+  try { return window.matchMedia('(pointer: coarse)').matches; }
+  catch { return false; }
+}
+
+let cachedTrackedSelector: string | null = null;
+
+async function loadTrackedSelectorForThisUrl(): Promise<void> {
+  try {
+    const { tracked } = await browser.storage.local.get('tracked');
+    const list = (tracked ?? []) as Array<{ url: string; selector: string | null }>;
+    const match = list.find(i => sameUrl(i.url, location.href));
+    cachedTrackedSelector = match?.selector ?? null;
+  } catch { /* ignore */ }
+}
 
 function detect() {
-  return findPriceOnPage(document, { hostname: location.hostname });
+  return findPriceOnPage(document, {
+    hostname: location.hostname,
+    preferredSelector: cachedTrackedSelector
+  });
 }
 
 function findProductImage(): string | null {
@@ -66,21 +86,79 @@ function findTitle(): string | null {
   return document.title || null;
 }
 
-function persistLastDetected(): void {
-  if (window.top !== window.self) return;
-  if (!isProductPage(document)) return;
-  const detected = detect();
-  if (!detected || detected.price == null) return;
+function sameUrl(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false;
+  return a.split('#')[0] === b.split('#')[0];
+}
+
+async function updateTrackedFromVisit(price: number, raw: string, image: string | null): Promise<void> {
+  const { tracked } = await browser.storage.local.get('tracked');
+  const list = (tracked ?? []) as Array<{
+    url: string;
+    lastPrice: number | null;
+    lastRaw: string;
+    updatedAt: number;
+    lastChecked: number;
+    failedChecks?: number;
+    image?: string | null;
+    history?: Array<{ ts: number; price: number | null; raw: string }>;
+  }>;
+  const it = list.find(i => sameUrl(i.url, location.href));
+  if (!it) return;
+  const now = Date.now();
+  const changed = it.lastPrice !== price || (it.lastRaw || '') !== raw;
+  it.lastChecked = now;
+  it.failedChecks = 0;
+  if (image && !it.image) it.image = image;
+  if (changed) {
+    it.lastPrice = price;
+    it.lastRaw = raw;
+    it.updatedAt = now;
+    it.history = it.history ?? [];
+    it.history.push({ ts: now, price, raw });
+  }
+  await browser.storage.local.set({ tracked: list });
+}
+
+function persistHit(hit: { price: number; raw: string }): void {
+  const image = findProductImage();
   browser.storage.local.set({
     lastDetected: {
       url: location.href,
-      price: detected.price,
-      raw: detected.raw,
+      price: hit.price,
+      raw: hit.raw,
       title: findTitle(),
-      image: findProductImage(),
+      image,
       updatedAt: Date.now()
     }
-  }).catch(() => { /* best-effort persistence */ });
+  }).catch(() => { /* best-effort */ });
+  updateTrackedFromVisit(hit.price, hit.raw, image).catch(() => { /* best-effort */ });
+}
+
+async function persistLastDetected(): Promise<void> {
+  if (window.top !== window.self) return;
+  await loadTrackedSelectorForThisUrl();
+  // Product signal or a saved selector is enough. Skip if neither (e.g. news pages).
+  if (!cachedTrackedSelector && !isProductPage(document)) return;
+
+  const immediate = detect();
+  if (immediate) { persistHit(immediate); return; }
+
+  // JS-rendered pages populate the price after load. Watch for up to 8s.
+  let settled = false;
+  const obs = new MutationObserver(() => {
+    if (settled) return;
+    const hit = detect();
+    if (hit) {
+      settled = true;
+      obs.disconnect();
+      persistHit(hit);
+    }
+  });
+  try {
+    obs.observe(document, { childList: true, subtree: true, characterData: true });
+  } catch { /* detached */ }
+  setTimeout(() => { if (!settled) obs.disconnect(); }, 8000);
 }
 
 function waitForDynamicPrice(timeoutMs: number): Promise<GetPriceResponse> {
@@ -175,7 +253,96 @@ function readRawForSelector(el: Element): string {
   return extractCurrencySnippet(raw);
 }
 
-function startPicker(): Promise<StartSelectResponse> {
+function commitPick(el: Element): StartSelectResponse {
+  const refined = bestElementForPrice(el);
+  const selector = refineAmazonSelector(refined, getSelector(refined));
+  const raw = readRawForSelector(refined);
+  const price = cleanNumber(raw);
+  const title = findTitle();
+  const result: StartSelectResponse = { selector, raw, price, title };
+  browser.runtime.sendMessage({
+    action: 'manualSelectResult',
+    item: { url: location.href, selector, raw, price, title, image: findProductImage() }
+  }).catch(() => { /* best-effort persist from content */ });
+  return result;
+}
+
+function startTouchPicker(): Promise<StartSelectResponse> {
+  return new Promise(resolve => {
+    let selected: Element | null = null;
+    const style = document.createElement('style');
+    style.id = PICKER_STYLE_ID;
+    style.textContent = `
+      .${HIGHLIGHT_CLASS}{outline:3px solid rgba(37,99,235,0.9) !important}
+      #${PICKER_BAR_ID}{position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:#1c1e23;color:#fff;display:flex;gap:8px;padding:10px 12px;font:500 14px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;box-shadow:0 -2px 12px rgba(0,0,0,0.4);align-items:center}
+      #${PICKER_BAR_ID} .ppb-info{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e6e9ef}
+      #${PICKER_BAR_ID} button{appearance:none;border:0;border-radius:6px;padding:10px 14px;font:inherit;cursor:pointer;touch-action:manipulation}
+      #${PICKER_BAR_ID} .ppb-ok{background:#2563eb;color:#fff}
+      #${PICKER_BAR_ID} .ppb-ok:disabled{opacity:0.5}
+      #${PICKER_BAR_ID} .ppb-cancel{background:transparent;color:#e6e9ef;border:1px solid rgba(255,255,255,0.25)}
+    `;
+    document.head.appendChild(style);
+
+    const bar = document.createElement('div');
+    bar.id = PICKER_BAR_ID;
+    const info = document.createElement('span');
+    info.className = 'ppb-info';
+    info.textContent = 'Tap a price on the page';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'ppb-cancel';
+    cancelBtn.textContent = 'Cancel';
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    okBtn.className = 'ppb-ok';
+    okBtn.textContent = 'Confirm';
+    okBtn.disabled = true;
+    bar.append(info, cancelBtn, okBtn);
+    document.body.appendChild(bar);
+
+    const onTap = (e: Event) => {
+      const t = e.target as Element | null;
+      if (!t || bar.contains(t)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (selected) selected.classList.remove(HIGHLIGHT_CLASS);
+      const refined = bestElementForPrice(t);
+      selected = refined;
+      refined.classList.add(HIGHLIGHT_CLASS);
+      const raw = readRawForSelector(refined);
+      info.textContent = raw || '(selected, no currency text)';
+      okBtn.disabled = false;
+    };
+    const onOk = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!selected) return;
+      const target = selected;
+      cleanup();
+      resolve(commitPick(target));
+    };
+    const onCancel = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      cleanup();
+      resolve({});
+    };
+    function cleanup() {
+      document.removeEventListener('click', onTap, true);
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      selected?.classList.remove(HIGHLIGHT_CLASS);
+      bar.remove();
+      style.remove();
+    }
+
+    document.addEventListener('click', onTap, true);
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+  });
+}
+
+function startHoverPicker(): Promise<StartSelectResponse> {
   return new Promise(resolve => {
     let hovered: Element | null = null;
     const style = document.createElement('style');
@@ -197,18 +364,9 @@ function startPicker(): Promise<StartSelectResponse> {
     const onClick = (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      const target = e.target as Element;
       cleanup();
-      const refined = bestElementForPrice(e.target as Element);
-      const selector = refineAmazonSelector(refined, getSelector(refined));
-      const raw = readRawForSelector(refined);
-      const price = cleanNumber(raw);
-      const title = findTitle();
-      const result: StartSelectResponse = { selector, raw, price, title };
-      browser.runtime.sendMessage({
-        action: 'manualSelectResult',
-        item: { url: location.href, selector, raw, price, title, image: findProductImage() }
-      }).catch(() => { /* best-effort persist from content */ });
-      resolve(result);
+      resolve(commitPick(target));
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { cleanup(); resolve({}); }
@@ -229,6 +387,10 @@ function startPicker(): Promise<StartSelectResponse> {
   });
 }
 
+function startPicker(): Promise<StartSelectResponse> {
+  return isTouchDevice() ? startTouchPicker() : startHoverPicker();
+}
+
 browser.runtime.onMessage.addListener((msg: Message) => {
   if (!msg || typeof msg !== 'object') return;
   if (msg.action === 'getPrice') {
@@ -245,5 +407,6 @@ browser.runtime.onMessage.addListener((msg: Message) => {
   return undefined;
 });
 
+loadTrackedSelectorForThisUrl();
 persistLastDetected();
 window.addEventListener('load', persistLastDetected, { once: true });
