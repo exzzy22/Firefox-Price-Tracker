@@ -42,6 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Earlier releases
 
 Versions `v0.1.0` through `v0.1.14` predate this changelog. See the
-[git tags](https://github.com/exzzy22/FirefoxPriceTracker/tags) and
-[GitHub releases](https://github.com/exzzy22/FirefoxPriceTracker/releases)
+[git tags](https://github.com/exzzy22/Firefox-Price-Tracker/tags) and
+[GitHub releases](https://github.com/exzzy22/Firefox-Price-Tracker/releases)
 for that history.
