@@ -1,6 +1,6 @@
 {
   "name": "firefox-price-tracker",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Track product prices and get notified when they change.",
   "private": true,
   "type": "module",

@@ -5,6 +5,16 @@ All notable changes to Price Tracker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-07-09
+
+### Changed
+
+- Reverted the interface to the original blue colour scheme. The amber palette
+  introduced in 0.3.0 has been removed and `src/styles.css` is byte-identical
+  to its 0.2.0 state.
+
+Click-to-open on price-change notifications, added in 0.3.0, is unaffected.
+
 ## [0.3.0] — 2026-07-09
 
 ### Added
