@@ -19,6 +19,9 @@ const DEFAULT_INTERVAL_MINUTES = 60;
 const HISTORY_LIMIT = 200;
 const PRICE_EPSILON = 0.0001;
 const MIGRATION_FLAG = 'normalizedV2';
+// Notification ids embed the product url after this prefix so onClicked can
+// reopen the page without holding state across event-page suspensions.
+const NOTIFY_PREFIX = 'price-change:';
 
 const action = browser.action ?? browser.browserAction;
 
@@ -71,12 +74,12 @@ function pricesEqual(a: number | null, b: number | null): boolean {
   return Math.abs(a - b) <= PRICE_EPSILON;
 }
 
-function notifyPriceChange(item: TrackedItem, prevRaw: string, nextRaw: string, idx: number): void {
+function notifyPriceChange(item: TrackedItem, prevRaw: string, nextRaw: string): void {
   const title = item.title || item.url;
   const body = prevRaw
     ? `Price changed from ${prevRaw} → ${nextRaw}`
     : `Now ${nextRaw}`;
-  browser.notifications.create(`price-change-${idx}-${Date.now()}`, {
+  browser.notifications.create(`${NOTIFY_PREFIX}${item.url}`, {
     type: 'basic',
     iconUrl: browser.runtime.getURL('icons/icon-128.png'),
     title: `Price update: ${title}`,
@@ -90,7 +93,7 @@ interface CheckOneResult {
   changed?: boolean;
 }
 
-async function checkOne(item: TrackedItem, idx: number, force: boolean): Promise<CheckOneResult> {
+async function checkOne(item: TrackedItem, force: boolean): Promise<CheckOneResult> {
   if (!force) {
     const { checkIntervalMinutes } = await browser.storage.local.get('checkIntervalMinutes');
     const interval = Number(checkIntervalMinutes) || DEFAULT_INTERVAL_MINUTES;
@@ -134,7 +137,7 @@ async function checkOne(item: TrackedItem, idx: number, force: boolean): Promise
   item.lastRaw = nextRaw;
   if (nextNorm.price != null) item.lastPrice = nextNorm.price;
   item.updatedAt = Date.now();
-  notifyPriceChange(item, prevRaw, nextRaw, idx);
+  notifyPriceChange(item, prevRaw, nextRaw);
   await incrementBadge();
   return { checked: true, changed: true };
 }
@@ -148,7 +151,7 @@ async function checkAll(force = false): Promise<RunCheckResponse> {
   let checked = 0;
   let skipped = 0;
   for (let i = 0; i < list.length; i++) {
-    const result = await checkOne(list[i]!, i, force);
+    const result = await checkOne(list[i]!, force);
     if (result.checked) checked++; else skipped++;
   }
   await browser.storage.local.set({ tracked: list });
@@ -240,6 +243,19 @@ browser.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === ALARM_NAME) {
     checkAll().catch(err => console.warn('PriceTracker: alarm check failed', err));
   }
+});
+
+// Clicking a price-change notification opens the tracked product page. The url
+// is decoded from the notification id (see notifyPriceChange), so this works on
+// desktop and Android and survives event-page suspend/respawn.
+browser.notifications.onClicked.addListener(id => {
+  if (typeof id !== 'string' || !id.startsWith(NOTIFY_PREFIX)) return;
+  const url = id.slice(NOTIFY_PREFIX.length);
+  if (url) {
+    browser.tabs.create({ url, active: true }).catch(err =>
+      console.warn('PriceTracker: failed to open notification target', err));
+  }
+  browser.notifications.clear(id).catch(() => { /* already dismissed */ });
 });
 
 browser.runtime.onMessage.addListener(async (msg: Message) => {
