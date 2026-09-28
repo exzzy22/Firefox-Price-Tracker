@@ -3,30 +3,76 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Price Tracker — Details</title>
+  <title>Price Tracker</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="details">
-  <header class="details-header">
-    <h1>Tracked Items</h1>
-    <div>
+  <div class="page">
+    <header class="topbar">
+      <div class="brand">
+        <img class="brand-icon brand-icon-lg" src="icons/icon-48.png" alt="" width="36" height="36" />
+        <div>
+          <h1 class="page-title">Price Tracker</h1>
+          <p id="summary" class="subtitle"></p>
+        </div>
+      </div>
       <button id="refreshBtn" class="btn btn-primary">
         <span id="refreshSpinner" class="spinner" hidden></span>
-        <span id="refreshLabel">Force Check</span>
+        <span id="refreshLabel">Check now</span>
       </button>
+    </header>
+
+    <div class="layout">
+      <main class="main">
+        <div class="toolbar">
+          <label class="search">
+            <span id="searchIcon" class="search-icon"></span>
+            <input id="search" type="search" class="input" placeholder="Search products or shops" aria-label="Search tracked items" />
+          </label>
+          <select id="sort" class="input select" aria-label="Sort tracked items">
+            <option value="added">Recently added</option>
+            <option value="drop">Biggest drop</option>
+            <option value="changed">Recently changed</option>
+            <option value="price-asc">Price: low to high</option>
+            <option value="price-desc">Price: high to low</option>
+            <option value="name">Name</option>
+          </select>
+        </div>
+        <div id="status" class="status-line" role="status"></div>
+        <section id="list" class="details-list" aria-live="polite"></section>
+      </main>
+
+      <aside class="sidebar">
+        <section id="stats" class="panel stats" aria-label="Summary"></section>
+        <section class="panel settings" aria-labelledby="settingsTitle">
+          <h2 id="settingsTitle" class="panel-title">Settings</h2>
+          <label class="field">
+            <span class="field-label">Check prices every</span>
+            <select id="intervalSelect" class="input select"></select>
+          </label>
+          <label class="field">
+            <span class="field-label">Notify me</span>
+            <select id="notifySelect" class="input select">
+              <option value="any">On any price change</option>
+              <option value="drop">Only when a price drops</option>
+            </select>
+          </label>
+          <div class="field">
+            <span class="field-label">Backup</span>
+            <div class="btn-row">
+              <button id="exportBtn" class="btn btn-secondary">Export</button>
+              <!-- A real label opens the file picker on Android too; a
+                   programmatic click on a display:none input does not.
+                   Keep `accept`: without it Android offers camera/mic
+                   capture and Firefox asks for those permissions. -->
+              <label class="btn btn-secondary file-btn">Import<input id="importFile" type="file" accept="application/json,.json" class="visually-hidden" /></label>
+            </div>
+          </div>
+          <p class="hint">Tracked items are stored only in this browser. Export a backup to move them to another device.</p>
+        </section>
+      </aside>
     </div>
-  </header>
-
-  <section class="details-controls">
-    <label for="intervalInput">Check interval (minutes)</label>
-    <input id="intervalInput" class="input" type="number" min="1" value="60" />
-    <button id="saveIntervalBtn" class="btn btn-secondary">Save</button>
-    <div id="detailsStatus" class="status-text" style="flex:1;text-align:right;margin:0"></div>
-  </section>
-
-  <section id="list" class="details-list">
-    <div class="empty">(loading)</div>
-  </section>
+  </div>
 
   <script src="details.js"></script>
 </body>

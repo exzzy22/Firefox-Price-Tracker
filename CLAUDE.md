@@ -46,15 +46,20 @@ build.mjs                     esbuild bundler + static-asset copier
 package.json                  Scripts + devDependencies
 src/
   lib/
-    price.ts                  Price parsing (structured-data only)
+    price.ts                  Price detection + parsing (structured data first)
+    tracking.ts               Pure bookkeeping: history, pending-price confirm, import validation
+    url.ts                    Product identity (productKey) + tracking-param cleanup
+    format.ts                 Display helpers: currency formatting, titles, % change, times
+    dom.ts                    UI helpers: element builder, inline SVG icons, charts
     types.ts                  Storage + message types
-  background.ts               Event-page: alarms, fetches, notifications
+  background.ts               Event page: alarms, fetches, notifications; sole writer of `tracked`
   content_script.ts           Top-frame only: detect + manual-pick picker
   popup.ts + popup.html       Browser-action popup
-  details.ts + details.html   Full-page tracked-items view
+  details.ts + details.html   Full-page dashboard (list, history, settings, backup)
   styles.css                  Single shared stylesheet
 icons/                        Extension icons
-tests/price.test.ts           Unit tests (node:test + happy-dom via tsx)
+screenshots/                  README images; screenshots/amo/ = 1280x800 store images
+tests/*.test.ts               Unit tests (node:test + happy-dom via tsx)
 dist/                         Build output — gitignored, what actually ships
 build/                        web-ext packaged zip — gitignored
 .github/workflows/release.yml GitHub Release pipeline (no AMO step)
@@ -79,70 +84,143 @@ extension root.
 
 ## Key invariants
 
-### Price detection is structured-data-only
+### Price detection is structured-data-first
 
-The content script (and the background HTML parser) only accept a price
-when at least one of these signals exists on the page:
+`findPriceOnPage` in [src/lib/price.ts](src/lib/price.ts) only accepts a
+price from these sources, in this order:
 
 1. An explicit user-picked selector (`TrackedItem.selector`).
-2. A known Amazon product container (any of `AMAZON_PRODUCT_PAGE_SIGNALS`,
-   which covers both desktop `#productTitle` and mobile
-   `#corePriceDisplay_mobile_feature_div`) + Amazon selectors.
-3. JSON-LD with `Product` / `Offer`.
+2. A site rule (`SITE_RULES`): Amazon, Target, Newegg, MediaMarkt/Saturn.
+   Each rule is gated on hostname **and** a page signal. Amazon reads only
+   the buy box (`AMAZON_SELECTORS`) — never a bare `.a-price`, which also
+   matches recommendation carousels — and builds the value from
+   `.a-price-whole`/`.a-price-fraction` because `.a-offscreen` sometimes
+   drops the decimal point ("EUR1842" for €18.42).
+3. JSON-LD `Product`/`ProductGroup` (via `@graph`, `mainEntity`,
+   `BuyAction.object`; `ProductGroup.hasVariant` picks the variant in the
+   URL). `ItemList` members are ignored (category pages).
 4. Microdata inside an `itemscope itemtype*="Product"` scope.
-5. `<meta property="product:price:amount">` or equivalent.
-6. WooCommerce: `form.cart` **plus** `.woocommerce-Price-amount` on
-   the page, selected via `p.price` / `.summary .price` to avoid
-   add-on/variation noise.
-7. `[itemprop=price]` **plus** a page-level product signal from
-   `isProductPage`.
+5. Meta tags: `product:sale_price:amount` while its sale dates are
+   current, then `product:price:amount` / `og:price:amount`.
+6. WooCommerce: `form.cart` **plus** `.woocommerce-Price-amount`.
+7. Generic DOM selectors (`GENERIC_PRICE_SELECTORS`: `[itemprop=price]`,
+   Magento `data-price-amount`, PrestaShop, Shopify Dawn, `data-test*=
+   product-price`, …) — only when `isProductPage` is true, only with a
+   currency marker in the text, and **not** when a site rule matched.
+8. Last resort: a JSON-LD `AggregateOffer` **range** (`lowPrice` of many
+   variants). HSN publishes the cheapest of 100+ variants here, which is not
+   the price on the page, so it must never beat sources 4–7.
 
 There is **no body-text currency fallback**. If you add one you will
-reintroduce the news-article false-positive bug that this rewrite
-deliberately removed. The regression test is in
-[tests/price.test.ts](tests/price.test.ts) — "findPriceOnPage: returns
-null for a non-product page with currency text".
+reintroduce the news-article false-positive bug. The regression tests are in
+[tests/price.test.ts](tests/price.test.ts) ("returns null for a non-product
+page with currency text", "generic fallback never runs on non-product
+pages").
+
+Every hit carries `currency` (ISO 4217) when known — from structured data or
+an unambiguous symbol (`€`, `£`, `zł`, …; never `$`, `¥`, `kr`). The UI
+formats with `Intl.NumberFormat` when the currency is known and falls back to
+the site's own text otherwise ([src/lib/format.ts](src/lib/format.ts)).
+
+Number parsing (`cleanNumber`) treats a lone separator followed by exactly
+three digits as a thousands separator ("$1,299" → 1299, "1.299 €" → 1299).
+Machine values from structured data go through `parseMachineNumber`, which
+keeps "1.299" as 1.299.
+
+### Price changes are confirmed before they are recorded
+
+A background check that sees a new price stores it in `TrackedItem.pending`
+instead of committing it, and schedules the `confirmPrices` alarm. Only when a
+later check (at least `CONFIRM_MIN_AGE_MS` after the first sighting) sees the
+same price is it committed to history and notified. If the old price comes
+back, the pending value is dropped silently. This exists because some shops
+briefly serve wrong prices (CDN caches a few minutes stale, daily flash-sale
+boundaries at HSN), which used to produce false notifications. The logic is
+pure and unit-tested in [src/lib/tracking.ts](src/lib/tracking.ts) /
+[tests/tracking.test.ts](tests/tracking.test.ts).
+
+Prices are compared at cent precision (`PRICE_EPSILON = 0.005`), so
+"19.701001" and "19.70" are the same price.
 
 ### JS-rendered pages
 
 Some sites render prices client-side; the background `fetch()` only sees
 the raw HTML. `findPriceInHtml` returns null in that case and
-[src/background.ts](src/background.ts) increments the item's
-`failedChecks` counter. Two consecutive failures surface as a
-red strikethrough in the popup list and a warning in the details card.
+[src/background.ts](src/background.ts) increments `failedChecks` and records
+`lastError` ("No price in page", "Blocked by the site", "HTTP 403", …). Two
+consecutive failures surface as a warning with that reason in the popup and
+dashboard.
 
-The content script compensates by caching the tracked selector for the
-current URL and watching DOM mutations for up to 8s after load; when the
-price finally appears it updates the tracked item in storage (no
-notification — background checks are still the canonical notify path).
+The content script compensates: on product pages (or pages with a tracked
+selector) it watches DOM mutations for up to 8s, waits until the detected
+price has been **stable for 1.5s**, and sends a `visitUpdate` message. The
+background treats it like an observation: for items it can't read itself
+(`failedChecks >= 2`) it commits directly; otherwise it goes through the
+pending/confirm path. Visit-originated changes never notify.
+
+### The background is the only writer of `tracked`
+
+Popup, dashboard and content script send messages (`trackItem`,
+`removeItem`, `visitUpdate`, `manualSelectResult`, `importItems`) instead of
+writing storage. The background serializes every read-modify-write through
+`withTracked()`, and `checkAll` fetches outside the lock and applies results
+to a fresh copy, so a slow check can't resurrect a removed item or drop one
+added meanwhile. Settings (`checkIntervalMinutes`, `notifyOn`) are still
+written directly by the dashboard; the background reacts via
+`storage.onChanged`.
+
+Background fetches use `credentials: 'include'` so the shop sees the same
+session/region/currency preferences as the user's own visits (Amazon shows a
+different currency otherwise), plus a 20s timeout and `cache: 'no-cache'`.
+
+`ensureAlarm()` runs on every wake-up: alarms aren't guaranteed to survive a
+browser restart, and the period must follow the user's interval (capped at
+60 min; items are still skipped until due).
+
+### Content scripts see page objects through Xray wrappers
+
+In Firefox content scripts, iterators returned by page objects such as
+`URLSearchParams.entries()` are **not iterable** ("… is not iterable"). Parse
+query strings by hand (`queryParts` in [src/lib/url.ts](src/lib/url.ts)) and
+copy DOM collections with `Array.prototype.slice.call`. Unit tests run in
+Node and can't catch this — test content-script paths in a real Firefox.
 
 ### Storage schema (`browser.storage.local`)
 
 See [src/lib/types.ts](src/lib/types.ts) for the canonical types. Summary:
 
 - `tracked: TrackedItem[]` — the user's watched products (includes
-  optional `image`, `failedChecks`)
+  optional `image`, `failedChecks`, `currency`, `lastError`, `addedAt`,
+  `pending`, `quietNextChange` — set by the v0.4 migration so the first
+  post-upgrade re-reading doesn't notify)
 - `checkIntervalMinutes: number` — global, default 60
+- `notifyOn: 'any' | 'drop'` — notification filter, default `'any'`
 - `badgeCount: number` — unread price-change notifications
+- `lastRunAt: number` — end of the last background check (UI "checked …")
 - `normalizedV2: boolean` — migration flag; do not reuse this key
+- `normalizedV3: boolean` — migration flag (thousands-separator re-parse +
+  currency backfill); do not reuse this key
 - `lastDetected: LastDetected` — written by content script on product pages only
 
 Storage is **device-local** (not synced across Firefox accounts). Adding
 sync would require fitting in `storage.sync`'s 100 KB / 8 KB-per-key
-quota; price history makes that hard, so we intentionally don't.
+quota; price history makes that hard, so we intentionally don't. The
+dashboard's Export/Import (JSON backup, validated by `sanitizeImported`) is
+the way to move data between devices.
 
 ### Message contract (`browser.runtime.sendMessage`)
 
 The `Message` discriminated union in [src/lib/types.ts](src/lib/types.ts)
 is the source of truth. Adding a new action: add a variant there, then
-handle it in background/content script.
+handle it in background/content script. Anything that changes `tracked`
+must be a background message (see above).
 
 ## Dev workflow
 
 ```
 npm install          # once, or after changing devDependencies
 npm run typecheck    # tsc --noEmit
-npm test             # node:test + tsx, exercises price.ts end-to-end
+npm test             # node:test + tsx: detection, url, format, tracking logic
 npm run build        # esbuild → dist/
 npm run lint         # web-ext lint dist/
 npm start            # build + web-ext run — opens a Firefox profile
@@ -166,9 +244,17 @@ npm run package      # build + produce build/price_tracker-<version>.zip
 4. From desktop `about:debugging` → the phone → Inspect the extension for
    a remote console on the background event page.
 
-The touch picker (`startTouchPicker` in
-[src/content_script.ts](src/content_script.ts)) is selected via
-`matchMedia('(pointer: coarse)')`. Desktop keeps the hover picker.
+The picker (`startPicker` in [src/content_script.ts](src/content_script.ts))
+switches to tap-then-confirm via `matchMedia('(pointer: coarse)')`; desktop
+uses hover + click. Its UI lives in a closed shadow root so page CSS can't
+touch it.
+
+Use a separate add-on id for device testing (edit the id in a scratch copy
+of `dist/manifest.json`): a temporary install with the published id shares
+`storage.local` with the user's real data. Firefox for Android blocks
+screenshots of private tabs unless "Allow screenshots in private browsing"
+is on, and price notifications need Android's notification permission for
+Firefox.
 
 ## Release
 
@@ -192,7 +278,12 @@ together before tagging. AMO rejects re-uploads with the same version.
   esbuild/tsx/happy-dom in `devDependencies`.
 - Single stylesheet. Design tokens live in `:root`; dark mode via
   `prefers-color-scheme`. No inline styles in TS beyond
-  `element.hidden`.
+  `element.hidden` (a global `[hidden] { display: none !important }` keeps
+  component `display` rules from overriding it). The one exception is the
+  content-script picker overlay, which positions its highlight box inline
+  inside its own shadow root.
+- No `innerHTML` in extension pages; build DOM with `h()` from
+  [src/lib/dom.ts](src/lib/dom.ts). Icons are inline SVG paths there.
 - Don't swallow errors silently. Either handle them or let them throw;
   only catch when you can produce a better outcome than "crash".
 - Keep the content script cheap. It runs on every page.
