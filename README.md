@@ -8,32 +8,45 @@ https://addons.mozilla.org/en-US/firefox/addon/firefox-price-tracker/
 
 ## Features
 
-- Click the toolbar icon on any product page — if a price is found it's
-  shown inline, one click tracks it.
-- Structured-data-only detection (JSON-LD `Product`, microdata,
-  OpenGraph `product:price:amount`, WooCommerce `p.price` markup,
-  site-specific Amazon selectors). Pages without a real product price
-  are reported as such instead of false-positive matches on any `$…`
-  text.
-- Manual element picker with a hover flow on desktop and a tap →
-  Confirm bar on Android.
-- Works with JS-rendered product pages: the content script watches
-  for the price to be inserted and updates the tracked item whenever
-  you re-open the page.
-- Background checks every 60 minutes (configurable). Change →
-  notification + toolbar badge. Pages the background can't fetch a
-  price from are flagged in the UI so you know to re-open them.
-- Per-item price history + thumbnail.
+- Click the toolbar icon on any product page — the price is detected with
+  its currency and one click tracks it.
+- Structured-data-first detection: JSON-LD `Product` and `ProductGroup`
+  variants, microdata, OpenGraph / `product:price` meta tags (including
+  time-boxed sale prices), WooCommerce, Magento, PrestaShop and Shopify
+  markup, plus site rules for Amazon, Target, Newegg and MediaMarkt/Saturn.
+  Pages without a real product price are reported as such instead of
+  false-positive matches on any `$…` text.
+- Understands international price formats: `$1,299`, `1.299,00 €`,
+  `12,99 zł`, `CHF 1'299.90`, `₹139` …
+- Manual element picker with a live price preview: hover + click on
+  desktop, tap + Confirm on Android.
+- No false alarms from price glitches: a changed price is only recorded
+  and notified once a second check a few minutes later confirms it.
+- Works with JS-rendered product pages: the content script waits for the
+  price to settle and updates the tracked item when you visit the page.
+- Background checks every 15 minutes to 24 hours (default: hourly). Notify
+  on every change or only on drops. Pages the background can't read are
+  flagged with the reason.
+- Dashboard with search, sorting, price-change badges, low/high, sparklines
+  and a full price history chart per item.
+- Export / import a JSON backup (storage is local to each browser).
 - Runs on Firefox for Android (Fenix 142+) with the same code.
 - No tracking, no analytics, no remote resources.
 
 ## Screenshots
 
-| Popup | Details |
-|-------|---------|
-| ![Popup light](screenshots/Pop-up-light-mode.png) | ![Details light](screenshots/Details-page-light-mode.png) |
-| ![Popup dark](screenshots/Pop-up-dark-mode.png) | ![Details dark](screenshots/Details-page-dark-mode.png) |
-| ![Popup Android dark](screenshots/Pop-up-android-dark-mode.jpg) | ![Details Android dark](screenshots/Details-page-android-dark-mode.jpg) |
+| Popup | Dashboard |
+|-------|-----------|
+| ![Popup, light](screenshots/popup-light.png) | ![Dashboard, light](screenshots/dashboard-light.png) |
+| ![Popup, dark](screenshots/popup-dark.png) | ![Dashboard, dark](screenshots/dashboard-dark.png) |
+
+| Android: popup | Android: picker | Android: history |
+|----------------|-----------------|------------------|
+| ![Android popup](screenshots/android-popup.png) | ![Android picker](screenshots/android-picker.png) | ![Android history](screenshots/android-history.png) |
+
+Store images (1280×800) for the AMO listing live in
+[screenshots/amo/](screenshots/amo/). All screenshots use a fictional demo
+shop.
 
 ## Installation
 
@@ -46,7 +59,7 @@ Requirements: Node 20+ and a modern Firefox.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # unit tests (price parsing, no browser needed)
+npm test            # unit tests (detection, urls, formatting, tracking logic)
 npm run build       # bundle TypeScript → dist/
 npm run lint        # web-ext lint dist/
 npm start           # build + launch Firefox with the extension loaded
@@ -71,14 +84,18 @@ tsconfig.json           Strict TypeScript config (ES2022 + DOM)
 build.mjs               esbuild bundler + static-asset copier
 src/
   lib/
-    price.ts            Price parsing (structured-data only)
+    price.ts            Price detection + parsing (structured data first)
+    tracking.ts         History, price-change confirmation, import validation
+    url.ts              Product identity + tracking-parameter cleanup
+    format.ts           Currency formatting, titles, change %, times
+    dom.ts              UI helpers: element builder, icons, charts
     types.ts            Storage + message types
-  background.ts         Alarms, fetches, notifications
+  background.ts         Alarms, fetches, notifications (sole writer of storage)
   content_script.ts     In-page detection + manual-pick overlay
   popup.html + popup.ts Browser-action popup
-  details.html + details.ts  Full-page tracked-items view
+  details.html + details.ts  Full-page dashboard
   styles.css            Single shared stylesheet
-tests/price.test.ts     Unit tests (node:test + happy-dom via tsx)
+tests/                  Unit tests (node:test + happy-dom via tsx)
 dist/                   Build output — gitignored, what actually ships
 ```
 
