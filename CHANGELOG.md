@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-17
+
 ### Added
 
 - Price detection for ekupi.hr, Svijet medija, Emmezeta and ASOS. Emmezeta
   tracks the price everyone pays (regular or clearance), not the login-only
   Klub price.
+
+### Changed
+
+- Redrawn extension icon, with sharper 16/32 px variants for the toolbar
+  and new 32/96 px sizes for high-DPI displays.
 
 ### Fixed
 
