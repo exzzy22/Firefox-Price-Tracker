@@ -37,7 +37,9 @@ async function copyStatics() {
   for (const { from, to } of STATIC_ASSETS) {
     const src = resolve(ROOT, from);
     const dst = resolve(ROOT, to);
-    await cp(src, dst, { recursive: true });
+    // icons/*.svg are the sources the PNGs are rendered from; only the
+    // PNGs ship.
+    await cp(src, dst, { recursive: true, filter: f => !f.endsWith('.svg') });
   }
 }
 

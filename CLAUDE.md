@@ -59,7 +59,8 @@ src/
   popup.ts + popup.html       Browser-action popup
   details.ts + details.html   Full-page dashboard (list, history, settings, backup)
   styles.css                  Single shared stylesheet
-icons/                        Extension icons
+icons/                        Extension icons (PNGs ship; icon.svg → 48–128,
+                              icon-small.svg → 16/32, not copied to dist/)
 screenshots/                  README images; screenshots/amo/ = 1280x800 store images
 tests/*.test.ts               Unit tests (node:test + happy-dom via tsx)
 dist/                         Build output — gitignored, what actually ships

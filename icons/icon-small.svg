@@ -1,0 +1,12 @@
+<!-- Source for icon-16/32.png: icon.svg on a 16px grid, without the trend
+     line, which turns to noise at toolbar size. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="14" height="14" rx="3.5" fill="url(#bg)"/>
+  <path fill="#fff" fill-rule="evenodd" d="M3.5 3.5 H8.5 L13.5 8.5 L8.5 13.5 L3.5 8.5 Z M6 4.75 A1.25 1.25 0 1 0 6 7.25 A1.25 1.25 0 1 0 6 4.75 Z"/>
+</svg>
