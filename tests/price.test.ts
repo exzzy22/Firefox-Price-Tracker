@@ -402,6 +402,65 @@ test('Target and Newegg site rules', () => {
   assert.equal(PL.findPriceOnPage(parse(newegg), { hostname: 'www.newegg.com' })?.price, 220);
 });
 
+test('Newegg: the collapsed "Buy Used" pane inserted after load is skipped', () => {
+  const pane = (cls: string, label: string, price: string) => `<div class="${cls}"><div class="product-price">
+    <div class="price-current_2026">$<strong>${price.split('.')[0]}</strong><sup>.${price.split('.')[1]}</sup></div></div>
+    <label class="form-radiobox is-mini"><input type="radio" name="product-buy-condition"><span class="form-radiobox-title">${label}</span></label></div>`;
+  const html = `<div class="product-buy-box">${pane('product-pane is-collapsed', 'Buy Used', '409.99')}${pane('product-pane', 'Buy New', '444.00')}</div>`;
+  assert.equal(PL.findPriceOnPage(parse(html), { hostname: 'www.newegg.com' })?.price, 444);
+});
+
+test('ekupi.hr: final price, not the 30-day low', () => {
+  const html = `<html><body><div class="main-price-block "><div class="main-price-block__prices">
+    <dl class="dl-horizontal"><dt>Najniža cijena u prethodnih 30 dana</dt><dd class="old-price"> 13,00 € <p class="altPrice"></p></dd></dl>
+    <dl class="dl-horizontal"><dt>Cijena</dt><dd class="final-price"> 9,75 € <p class="altPrice"></p></dd></dl>
+  </div></div></body></html>`;
+  const hit = PL.findPriceOnPage(parse(html), { hostname: 'www.ekupi.hr' });
+  assert.equal(hit?.price, 9.75);
+  assert.equal(hit?.currency, 'EUR');
+  assert.equal(hit?.source, 'site:ekupi');
+  // Same markup on another host has no product signal: no guess.
+  assert.equal(PL.findPriceOnPage(parse(html), { hostname: 'shop.test' }), null);
+});
+
+test('Svijet medija: main price, not the struck-through one or teasers', () => {
+  const html = `<html><body><div class="product__pricing product__information"><p class="product__information-label">Cijena:</p>
+    <span class="product__pricing-main product__pricing-discount"> 1.599,00 € </span>
+    <span class="product__pricing-strike-price">(2.199,00€)</span></div>
+    <div class="product--teaser__content-price"><span class="product__pricing-discount"> 19,99€ </span></div></body></html>`;
+  assert.equal(PL.findPriceOnPage(parse(html), { hostname: 'www.svijet-medija.hr' })?.price, 1599);
+});
+
+test('Emmezeta: regular price over the login-only Klub price, clearance over regular', () => {
+  const box = (cls: string, prices: string) =>
+    `<div class="sidebar-price"><div class="product-item__price-box ${cls}">${prices}</div></div>`;
+  const price = (type: string, value: string) =>
+    `<div class="base-price ${type}"><span class="price-wrapper"><span class="base-currency-price">${value}</span></span></div>`;
+  // The JSON-LD added after load reports the Klub price; the rule must win.
+  const klubLd = ld({ '@type': 'Product', offers: { price: '375.99', priceCurrency: 'EUR' } });
+  const klub = `<html><head>${klubLd}</head><body>${box('hasPromoPrice', price('simple_regular', '469,99 €') + price('simple_loyalty', '375,99 €'))}</body></html>`;
+  assert.equal(PL.findPriceOnPage(parse(klub), { hostname: 'www.emmezeta.hr' })?.price, 469.99);
+  const clearance = box('hasDiscount', price('simple_regular', '229,99 €') + price('simple_clearance', '199,99 €'));
+  assert.equal(PL.findPriceOnPage(parse(clearance), { hostname: 'www.emmezeta.hr' })?.price, 199.99);
+  const plain = box('', price('simple_regular', '1.799,99 €'));
+  assert.equal(PL.findPriceOnPage(parse(plain), { hostname: 'www.emmezeta.hr' })?.price, 1799.99);
+});
+
+test('ASOS: price from the inlined stock-price response', () => {
+  const response = JSON.stringify([{ productId: 10432895, productPrice: {
+    current: { value: 20.75, text: '20,75 €' }, previous: { value: 44.99, text: '44,99 €' }, currency: 'EUR' } }]);
+  const html = `<html><head>${ld({ '@context': 'https://schema.org/', '@graph': [{ '@type': 'ProductGroup', name: 'Trousers' }] })}</head>
+    <body><div id="pdp-react-critical-app"></div>
+    <script>window.asos.pdp.config.stockPriceResponse = '${response}';window.asos.pdp.config.x = 'y';</script></body></html>`;
+  const url = 'https://www.asos.com/de/asos-design/trousers/prd/10432895';
+  const hit = PL.findPriceOnPage(parse(html), { hostname: 'www.asos.com', pageUrl: url });
+  assert.deepEqual(hit, { price: 20.75, raw: '20,75 €', currency: 'EUR', source: 'site:asos' });
+  // Another product's page: its own id isn't in the response.
+  const other = response.replace('10432895', '999');
+  const twoProducts = html.replace(response, JSON.stringify([...JSON.parse(other), ...JSON.parse(other)]));
+  assert.equal(PL.findPriceOnPage(parse(twoProducts), { hostname: 'www.asos.com', pageUrl: url }), null);
+});
+
 // --- generic fallback ----------------------------------------------------
 
 test('generic fallback: product page price outside structured data', () => {

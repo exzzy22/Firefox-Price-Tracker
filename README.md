@@ -13,7 +13,8 @@ https://addons.mozilla.org/en-US/firefox/addon/firefox-price-tracker/
 - Structured-data-first detection: JSON-LD `Product` and `ProductGroup`
   variants, microdata, OpenGraph / `product:price` meta tags (including
   time-boxed sale prices), WooCommerce, Magento, PrestaShop and Shopify
-  markup, plus site rules for Amazon, Target, Newegg and MediaMarkt/Saturn.
+  markup, plus site rules for Amazon, Target, Newegg, MediaMarkt/Saturn,
+  ASOS, ekupi.hr, Svijet medija and Emmezeta.
   Pages without a real product price are reported as such instead of
   false-positive matches on any `$…` text.
 - Understands international price formats: `$1,299`, `1.299,00 €`,
@@ -24,6 +25,8 @@ https://addons.mozilla.org/en-US/firefox/addon/firefox-price-tracker/
   and notified once a second check a few minutes later confirms it.
 - Works with JS-rendered product pages: the content script waits for the
   price to settle and updates the tracked item when you visit the page.
+  The KW Automotive store's configurator and dm are checked in the
+  background through the shops' own price APIs.
 - Background checks every 15 minutes to 24 hours (default: hourly). Notify
   on every change or only on drops. Pages the background can't read are
   flagged with the reason.

@@ -159,6 +159,10 @@ export interface ImportResponse {
   skipped: number;
 }
 
+// Injected into the shop-API resolvers (src/lib/kwstore.ts, dmstore.ts) so
+// they stay free of browser APIs and testable.
+export type FetchJson = (url: string, init?: RequestInit) => Promise<unknown>;
+
 export interface FindPriceOptions {
   hostname?: string;
   preferredSelector?: string | null;

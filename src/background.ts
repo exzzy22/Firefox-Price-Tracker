@@ -6,6 +6,8 @@
 // read-modify-write goes through withTracked(), so a long background check
 // can no longer overwrite an item added or removed while it was running.
 import { formatPct, formatPrice, cleanTitle } from './lib/format.js';
+import { dmTarget, fetchDmPrice } from './lib/dmstore.js';
+import { fetchKwPrice, kwTarget } from './lib/kwstore.js';
 import {
   currencyCodeOf,
   findPriceInHtml,
@@ -21,6 +23,7 @@ import {
 } from './lib/tracking.js';
 import { cleanUrl, isWebUrl, productKey, siteName } from './lib/url.js';
 import type {
+  FetchJson,
   ImportResponse,
   Message,
   NotifyOn,
@@ -144,18 +147,54 @@ function hostnameOf(url: string): string {
   try { return new URL(url).hostname; } catch { return ''; }
 }
 
+// Shop cookies go along so region/currency match the user's own visits.
+function shopFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(url, { ...init, credentials: 'include', cache: 'no-cache', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+}
+
+function fetchError(err: unknown): string {
+  return err instanceof DOMException && err.name === 'TimeoutError' ? 'Timed out' : 'Network error';
+}
+
+class HttpStatusError extends Error {}
+
+type ApiReader = (fetchJson: FetchJson) => Promise<PriceHit | null>;
+
+// Shops whose pages never carry the price in their HTML: ask the JSON
+// endpoints their pages use instead (src/lib/kwstore.ts, src/lib/dmstore.ts).
+function apiReader(item: TrackedItem): ApiReader | null {
+  const kw = kwTarget(item.url);
+  if (kw) return fetchJson => fetchKwPrice(kw, fetchJson, item.currency ?? null);
+  const dm = dmTarget(item.url);
+  if (dm) return fetchJson => fetchDmPrice(dm, fetchJson);
+  return null;
+}
+
+async function observeApi(read: ApiReader): Promise<Observation> {
+  const fetchJson = async (url: string, init?: RequestInit): Promise<unknown> => {
+    const resp = await shopFetch(url, init);
+    if (!resp.ok) throw new HttpStatusError(`HTTP ${resp.status}`);
+    return resp.json();
+  };
+  try {
+    const hit = await read(fetchJson);
+    return hit ? { ok: true, hit } : { ok: false, error: 'No price in page' };
+  } catch (err) {
+    if (err instanceof HttpStatusError) return { ok: false, error: err.message };
+    // Not JSON: the endpoint answered with a page, i.e. the API changed.
+    if (err instanceof SyntaxError) return { ok: false, error: 'No price in page' };
+    return { ok: false, error: fetchError(err) };
+  }
+}
+
 async function observe(item: TrackedItem): Promise<Observation> {
+  const api = apiReader(item);
+  if (api) return observeApi(api);
   let resp: Response;
   try {
-    resp = await fetch(item.url, {
-      method: 'GET',
-      credentials: 'include',
-      cache: 'no-cache',
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
-    });
+    resp = await shopFetch(item.url, { method: 'GET' });
   } catch (err) {
-    const timedOut = err instanceof DOMException && err.name === 'TimeoutError';
-    return { ok: false, error: timedOut ? 'Timed out' : 'Network error' };
+    return { ok: false, error: fetchError(err) };
   }
   const html = await resp.text();
   if (!resp.ok) {

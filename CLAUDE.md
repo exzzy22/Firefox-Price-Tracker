@@ -47,6 +47,8 @@ package.json                  Scripts + devDependencies
 src/
   lib/
     price.ts                  Price detection + parsing (structured data first)
+    kwstore.ts                KW store: prices from its JSON endpoints (page HTML has none)
+    dmstore.ts                dm: prices from dm's product API (page HTML has none)
     tracking.ts               Pure bookkeeping: history, pending-price confirm, import validation
     url.ts                    Product identity (productKey) + tracking-param cleanup
     format.ts                 Display helpers: currency formatting, titles, % change, times
@@ -90,12 +92,19 @@ extension root.
 price from these sources, in this order:
 
 1. An explicit user-picked selector (`TrackedItem.selector`).
-2. A site rule (`SITE_RULES`): Amazon, Target, Newegg, MediaMarkt/Saturn.
+2. A site rule (`SITE_RULES`): Amazon, Target, Newegg, MediaMarkt/Saturn,
+   ekupi.hr, Svijet medija, Emmezeta, ASOS.
    Each rule is gated on hostname **and** a page signal. Amazon reads only
    the buy box (`AMAZON_SELECTORS`) — never a bare `.a-price`, which also
    matches recommendation carousels — and builds the value from
    `.a-price-whole`/`.a-price-fraction` because `.a-offscreen` sometimes
-   drops the decimal point ("EUR1842" for €18.42).
+   drops the decimal point ("EUR1842" for €18.42). Site rules run on both
+   the raw HTML (background) and the rendered DOM (content script), so they
+   must pick the same price in both: Newegg inserts a collapsed "Buy Used"
+   pane after load, and Emmezeta's JSON-LD (also added after load) reports
+   the login-only Klub price — the rules skip both. A rule may use
+   `extract(doc, pageUrl)` instead of selectors when the price only exists
+   in inline script data (ASOS: `stockPriceResponse`).
 3. JSON-LD `Product`/`ProductGroup` (via `@graph`, `mainEntity`,
    `BuyAction.object`; `ProductGroup.hasVariant` picks the variant in the
    URL). `ItemList` members are ignored (category pages).
@@ -157,6 +166,24 @@ price has been **stable for 1.5s**, and sends a `visitUpdate` message. The
 background treats it like an observation: for items it can't read itself
 (`failedChecks >= 2`) it commits directly; otherwise it goes through the
 pending/confirm path. Visit-originated changes never notify.
+
+A shop whose pages never carry the price in their HTML can get a site
+resolver that asks the shop's own JSON endpoints instead:
+[src/lib/kwstore.ts](src/lib/kwstore.ts) for the KW store's configurator
+(`store.kwautomotive.de/<store-view>/shop?c_car=…&pgs=…&ag=…`) and
+[src/lib/dmstore.ts](src/lib/dmstore.ts) for dm (`dm.<tld>/p/d/<dan>/…`).
+`apiReader()` in the background routes matching URLs there and skips the
+HTML fetch. Resolvers take an injected `fetchJson` so they're unit-testable
+without a browser. A generic fallback (re-rendering pages in a background
+tab) was considered and rejected: visible tab flashes, history entries, and
+full page loads with trackers on every check.
+
+Before adding a resolver, test it from a real extension in Firefox, not just
+curl: Firefox sends `Origin: moz-extension://…` on the extension's POST
+requests (not on GETs), and some APIs reject that origin (dm's does; it is
+only usable because the resolver GETs). Some shops (Kaufland, Alza) answer
+the background's fetch with 403 even right after the user visited them;
+those stay visit-updated.
 
 ### The background is the only writer of `tracked`
 

@@ -5,6 +5,24 @@ All notable changes to Price Tracker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Price detection for ekupi.hr, Svijet medija, Emmezeta and ASOS. Emmezeta
+  tracks the price everyone pays (regular or clearance), not the login-only
+  Klub price.
+
+### Fixed
+
+- KW Automotive store (`store.kwautomotive.de`) and dm (dm.hr, dm.de, …):
+  their pages render the price with JavaScript, so background checks always
+  failed and the price only updated when the page was opened. Background
+  checks now read the price from the shops' own price APIs.
+- Newegg: tracking from the popup could save the "Buy Used" price, followed
+  by a false "price went up" notification when the next background check
+  read the new price.
+
 ## [0.4.0] — 2026-09-28
 
 ### Added

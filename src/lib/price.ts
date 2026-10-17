@@ -145,7 +145,7 @@ export function canonicalForCompare(raw: unknown): string {
 
 // Raw string for a price that came from structured data. Kept parseable by
 // normalizeRaw, e.g. "EUR 19.70".
-function structuredRaw(value: number, currency: string | null): string {
+export function structuredRaw(value: number, currency: string | null): string {
   const num = Number.isInteger(value * 100) ? value.toFixed(2) : String(value);
   return currency ? `${currency} ${num}` : num;
 }
@@ -511,6 +511,9 @@ interface SiteRule {
   prices: readonly string[];
   exclude?: readonly string[];
   read?: (el: Element) => PriceHit | null;
+  // For shops that put the price in inline script data instead of markup.
+  // Replaces `prices` when given.
+  extract?: (doc: Document, pageUrl?: string) => PriceHit | null;
 }
 
 // Amazon product-page signals. #productTitle is desktop-only; mobile
@@ -571,6 +574,35 @@ function readAmazonPrice(el: Element): PriceHit | null {
 
 const AMAZON_HOST = /(^|\.)amazon\.[a-z.]+$/;
 
+// ASOS ships JSON-LD without offers. The price API's response is inlined in
+// a script instead: window.asos.pdp.config.stockPriceResponse = '[...]',
+// one entry per product id (the number after /prd/ in the URL).
+function readAsosStockPrice(doc: Document, pageUrl?: string): PriceHit | null {
+  const marker = "stockPriceResponse = '";
+  for (const script of doc.querySelectorAll('script:not([src])')) {
+    const text = script.textContent ?? '';
+    const start = text.indexOf(marker);
+    if (start < 0) continue;
+    const end = text.indexOf("';", start + marker.length);
+    if (end < 0) return null;
+    let products: unknown;
+    // A JS single-quoted literal: JSON with any apostrophes escaped.
+    try { products = JSON.parse(text.slice(start + marker.length, end).replace(/\\'/g, "'")); } catch { return null; }
+    if (!Array.isArray(products)) return null;
+    const id = pageUrl?.match(/\/prd\/(\d+)/)?.[1];
+    const product = (id && products.find(p => String((p as LdNode | null)?.productId) === id))
+      ?? (products.length === 1 ? products[0] : null);
+    const price = (product as LdNode | null)?.productPrice as LdNode | undefined;
+    const current = price?.current as LdNode | undefined;
+    const value = parseMachineNumber(current?.value);
+    if (!isPositive(value)) return null;
+    const currency = normalizeCurrencyCode(price?.currency);
+    const shown = typeof current?.text === 'string' ? current.text.trim() : '';
+    return { price: value, raw: cleanNumber(shown) === value ? shown : structuredRaw(value, currency), currency };
+  }
+  return null;
+}
+
 // Reads the element a user picked by hand (or its saved selector).
 export function readPickedElement(el: Element | null | undefined, hostname = ''): PriceHit | null {
   if (!el) return null;
@@ -597,7 +629,13 @@ export const SITE_RULES: readonly SiteRule[] = [
     name: 'newegg',
     host: /(^|\.)newegg\.(com|ca)$/,
     signals: ['.product-buy-box', '.product-pane .product-price'],
-    prices: ['.product-pane .product-price [class*="price-current"]', '.product-buy-box [class*="price-current"]']
+    // After load a collapsed "Buy Used" pane is inserted above "Buy New";
+    // the raw HTML only has "Buy New".
+    prices: [
+      '.product-pane:not(.is-collapsed) .product-price [class*="price-current"]',
+      '.product-pane .product-price [class*="price-current"]',
+      '.product-buy-box [class*="price-current"]'
+    ]
   },
   {
     name: 'mediamarkt',
@@ -605,6 +643,41 @@ export const SITE_RULES: readonly SiteRule[] = [
     signals: ['[data-test="mms-product-price"]'],
     prices: ['[data-test="mms-product-price"]', '[data-test~="mms-branded-price"]'],
     exclude: ['[data-test^="mms-strike-price"]']
+  },
+  {
+    // The JSON-LD is only added after load; the markup is server-rendered.
+    name: 'ekupi',
+    host: /(^|\.)ekupi\.hr$/,
+    signals: ['.main-price-block .final-price'],
+    prices: ['.main-price-block .final-price'],
+    exclude: ['.altPrice']
+  },
+  {
+    name: 'svijet-medija',
+    host: /(^|\.)svijet-medija\.hr$/,
+    signals: ['.product__pricing .product__pricing-main'],
+    prices: ['.product__pricing .product__pricing-main']
+  },
+  {
+    // Public discounts (the shop's own list: clearance/promo) beat the regular
+    // price. The "Klub" price (simple_loyalty) needs a login, and it is what
+    // the JSON-LD added after load reports, so it must never win.
+    name: 'emmezeta',
+    host: /(^|\.)emmezeta\.hr$/,
+    signals: ['.sidebar-price .product-item__price-box'],
+    prices: [
+      '.sidebar-price .simple_clearance .base-currency-price',
+      '.sidebar-price .simple_promo .base-currency-price',
+      '.sidebar-price .promo_price .base-currency-price',
+      '.sidebar-price .simple_regular .base-currency-price'
+    ]
+  },
+  {
+    name: 'asos',
+    host: /(^|\.)asos\.com$/,
+    signals: ['#pdp-react-critical-app', '#pdp-react-app'],
+    prices: [],
+    extract: readAsosStockPrice
   }
 ];
 
@@ -616,9 +689,9 @@ function siteRuleFor(doc: Document, hostname: string): SiteRule | null {
   return null;
 }
 
-function findPriceBySiteRule(doc: Document, rule: SiteRule): PriceHit | null {
+function findPriceBySiteRule(doc: Document, rule: SiteRule, pageUrl?: string): PriceHit | null {
   const read = rule.read ?? ((el: Element) => readPriceFromElement(el, { exclude: rule.exclude }));
-  const hit = firstPrice(doc, rule.prices, read);
+  const hit = rule.extract ? rule.extract(doc, pageUrl) : firstPrice(doc, rule.prices, read);
   return hit ? { ...hit, source: `site:${rule.name}` } : null;
 }
 
@@ -698,7 +771,7 @@ export function findPriceOnPage(doc: Document, options: FindPriceOptions = {}): 
 
   const rule = siteRuleFor(doc, hostname);
   if (rule) {
-    const hit = findPriceBySiteRule(doc, rule);
+    const hit = findPriceBySiteRule(doc, rule, options.pageUrl);
     if (hit) return hit;
   }
 
