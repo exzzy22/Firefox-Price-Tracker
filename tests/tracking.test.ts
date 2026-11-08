@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CONFIRM_MIN_AGE_MS, FAIL_WARN_THRESHOLD, applyHit, sanitizeImported } from '../src/lib/tracking.ts';
+import { CONFIRM_MIN_AGE_MS, FAIL_WARN_THRESHOLD, alertMatch, applyHit, notifyReason, sanitizeAlert, sanitizeImported } from '../src/lib/tracking.ts';
 import type { TrackedItem } from '../src/lib/types.ts';
 
 const T0 = 1_700_000_000_000;
@@ -97,4 +97,69 @@ test('an unchanged price clears the upgrade flag', () => {
   const item = make(20, { quietNextChange: true });
   applyHit(item, hit(20), 'check', T0);
   assert.equal(item.quietNextChange, undefined);
+});
+
+test('sanitizeAlert keeps positive bounds in the right order', () => {
+  assert.deepEqual(sanitizeAlert({ below: 99 }), { below: 99, above: null });
+  assert.deepEqual(sanitizeAlert({ below: 80, above: 120 }), { below: 80, above: 120 });
+  assert.equal(sanitizeAlert({ below: 120, above: 80 }), null);
+  assert.equal(sanitizeAlert({ below: 100, above: 100 }), null);
+  assert.equal(sanitizeAlert({ below: -1, above: 0 }), null);
+  assert.equal(sanitizeAlert({ below: '99' }), null);
+  assert.equal(sanitizeAlert(null), null);
+});
+
+test('alertMatch is inclusive at cent precision', () => {
+  const alert = { below: 99, above: 150 };
+  assert.equal(alertMatch(alert, 99), 'below');
+  assert.equal(alertMatch(alert, 99.004), 'below');
+  assert.equal(alertMatch(alert, 99.01), null);
+  assert.equal(alertMatch(alert, 150), 'above');
+  assert.equal(alertMatch(alert, 149.99), null);
+  assert.equal(alertMatch(null, 10), null);
+});
+
+test('without an alert the global setting decides', () => {
+  assert.equal(notifyReason({}, 100, 90, 'any'), 'change');
+  assert.equal(notifyReason({}, 100, 110, 'any'), 'change');
+  assert.equal(notifyReason({}, 100, 90, 'drop'), 'change');
+  assert.equal(notifyReason({}, 100, 110, 'drop'), null);
+});
+
+test('a below alert fires on reaching the target and on further drops only', () => {
+  const item = { alert: { below: 100, above: null } };
+  assert.equal(notifyReason(item, 120, 110, 'any'), null, 'still above the target');
+  assert.equal(notifyReason(item, 110, 100, 'any'), 'below', 'reached exactly');
+  assert.equal(notifyReason(item, 120, 95, 'any'), 'below', 'crossed');
+  assert.equal(notifyReason(item, 95, 90, 'any'), 'below', 'cheaper still');
+  assert.equal(notifyReason(item, 90, 97, 'any'), null, 'rose but still below');
+  assert.equal(notifyReason(item, 97, 105, 'any'), null, 'left the range');
+  assert.equal(notifyReason(item, 105, 98, 'drop'), 'below', 're-entered');
+});
+
+test('an above alert fires even when only drops are notified', () => {
+  const item = { alert: { below: null, above: 150 } };
+  assert.equal(notifyReason(item, 140, 155, 'drop'), 'above');
+  assert.equal(notifyReason(item, 155, 160, 'drop'), 'above');
+  assert.equal(notifyReason(item, 160, 152, 'any'), null);
+  assert.equal(notifyReason(item, 152, 120, 'any'), null, 'drops do not notify with an above alert');
+});
+
+test('a range alert fires on either side', () => {
+  const item = { alert: { below: 80, above: 120 } };
+  assert.equal(notifyReason(item, 100, 79, 'any'), 'below');
+  assert.equal(notifyReason(item, 100, 125, 'any'), 'above');
+  assert.equal(notifyReason(item, 100, 110, 'any'), null);
+  assert.equal(notifyReason(item, 79, 125, 'any'), 'above', 'jumped across the range');
+});
+
+test('an invalid stored alert falls back to the global setting', () => {
+  assert.equal(notifyReason({ alert: { below: 120, above: 80 } }, 100, 110, 'any'), 'change');
+});
+
+test('sanitizeImported keeps a valid alert and drops a broken one', () => {
+  const ok = sanitizeImported({ url: 'https://shop.test/p/1', alert: { below: 50, above: null } })!;
+  assert.deepEqual(ok.alert, { below: 50, above: null });
+  const bad = sanitizeImported({ url: 'https://shop.test/p/1', alert: { below: 'x' } })!;
+  assert.equal(bad.alert, undefined);
 });

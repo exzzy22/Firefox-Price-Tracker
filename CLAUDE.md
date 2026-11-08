@@ -152,6 +152,20 @@ pure and unit-tested in [src/lib/tracking.ts](src/lib/tracking.ts) /
 Prices are compared at cent precision (`PRICE_EPSILON = 0.005`), so
 "19.701001" and "19.70" are the same price.
 
+### Price alerts replace the global notify filter
+
+An item may carry `alert: { below, above }` (either bound may be null),
+set from the dashboard's Alert panel via the `setAlert` message. Whether a
+confirmed change notifies is decided by `notifyReason` in
+[src/lib/tracking.ts](src/lib/tracking.ts): without an alert, the global
+`notifyOn` decides; with one, **only** the alert does. It fires when the
+price reaches a bound (inclusive, at cent precision) and again on every
+further move past it (cheaper still / pricier still), never when the price
+moves back toward or out of the range. Setting an alert the price already
+meets doesn't notify immediately. `sanitizeAlert` rejects non-positive
+bounds and `below >= above`; an invalid stored alert falls back to the
+global setting.
+
 ### JS-rendered pages
 
 Some sites render prices client-side; the background `fetch()` only sees
@@ -189,8 +203,8 @@ those stay visit-updated.
 ### The background is the only writer of `tracked`
 
 Popup, dashboard and content script send messages (`trackItem`,
-`removeItem`, `visitUpdate`, `manualSelectResult`, `importItems`) instead of
-writing storage. The background serializes every read-modify-write through
+`removeItem`, `visitUpdate`, `manualSelectResult`, `importItems`,
+`setAlert`) instead of writing storage. The background serializes every read-modify-write through
 `withTracked()`, and `checkAll` fetches outside the lock and applies results
 to a fresh copy, so a slow check can't resurrect a removed item or drop one
 added meanwhile. Settings (`checkIntervalMinutes`, `notifyOn`) are still
@@ -220,7 +234,8 @@ See [src/lib/types.ts](src/lib/types.ts) for the canonical types. Summary:
 - `tracked: TrackedItem[]` — the user's watched products (includes
   optional `image`, `failedChecks`, `currency`, `lastError`, `addedAt`,
   `pending`, `quietNextChange` — set by the v0.4 migration so the first
-  post-upgrade re-reading doesn't notify)
+  post-upgrade re-reading doesn't notify, `alert` — per-item target
+  prices, see "Price alerts" above)
 - `checkIntervalMinutes: number` — global, default 60
 - `notifyOn: 'any' | 'drop'` — notification filter, default `'any'`
 - `badgeCount: number` — unread price-change notifications

@@ -147,6 +147,9 @@ button { font-family: inherit; }
   border-color: transparent;
 }
 
+/* A toggle whose feature is switched on (e.g. a price alert is set). */
+.btn-ghost.is-active { color: var(--accent); }
+
 .btn-danger { color: var(--danger); }
 
 .btn-danger:hover:not(:disabled), .btn-danger.is-confirming {
@@ -510,6 +513,18 @@ body.popup { width: 380px; }
 .item-meta.is-warning { color: var(--warn); }
 .item-meta.is-pending { color: var(--accent); }
 
+.item-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  margin-left: 4px;
+}
+
+.item-alert-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.item-alert.is-below { color: var(--down); }
+.item-alert.is-above { color: var(--up); }
+
 .item-price-col {
   display: flex;
   flex-direction: column;
@@ -708,6 +723,10 @@ body.details {
   font-weight: 500;
 }
 
+.chip-alert { color: var(--accent); background: var(--accent-soft); }
+.chip-alert.is-below { color: var(--down); background: var(--down-soft); }
+.chip-alert.is-above { color: var(--up); background: var(--up-soft); }
+
 .notice {
   display: flex;
   align-items: flex-start;
@@ -756,6 +775,58 @@ body.details {
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
+
+.alert-panel {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.alert-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.alert-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 200px));
+  gap: 12px;
+}
+
+.alert-fields .field { margin: 0; }
+
+.price-input { position: relative; display: flex; }
+.price-input .input { width: 100%; font-variant-numeric: tabular-nums; }
+.price-input:has(.price-input-symbol) .input { padding-right: 44px; }
+
+.price-input-symbol {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12.5px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.field-error { margin: 0; font-size: 12.5px; color: var(--danger); }
+
+.alert-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.alert-foot .hint { flex: 1 1 240px; }
+.alert-buttons { display: flex; gap: 8px; margin-left: auto; }
 
 .chart-wrap { margin-bottom: 8px; }
 
@@ -878,15 +949,30 @@ body.details {
   .card-top { flex-direction: column; gap: 2px; }
   .card-price-block { flex-direction: row; align-items: center; gap: 8px; }
   .card-spark { display: none; }
-  /* Never wrap: a wrapping row moves "Remove" -> "Confirm" out from under
+  /* Five equal columns, icon over label, so the row fits a phone and never
+     wraps: a wrapping row would move "Remove" -> "Confirm" out from under
      the finger between the two taps. */
-  .item-actions { margin: 0 -8px; justify-content: space-between; flex-wrap: nowrap; }
-  .item-actions .btn { padding-left: 6px; padding-right: 6px; }
+  .item-actions {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    margin: 0 -4px;
+  }
+  .details .item-actions .btn {
+    flex-direction: column;
+    gap: 3px;
+    padding: 6px 2px;
+    font-size: 11.5px;
+  }
   .toolbar { flex-direction: column; }
   .history-row { grid-template-columns: auto auto 1fr; gap: 8px; }
+  .alert-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .alert-buttons { width: 100%; }
+  .alert-buttons .btn { flex: 1; }
 }
 
 @media (pointer: coarse) {
   .details .btn { padding: 9px 12px; }
   .details .btn-ghost { padding: 8px 10px; }
+  .details .price-input .input { font-size: 14px; padding-top: 9px; padding-bottom: 9px; }
 }

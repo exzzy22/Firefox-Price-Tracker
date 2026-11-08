@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Price alerts: set a target price on any tracked product (the new Alert
+  button on the dashboard) to be notified only when the price drops to or
+  below it, rises to or above it, or either. You're notified when the price
+  reaches the target and again each time it moves further past it; other
+  price changes for that product stay silent. Alerts show on the dashboard
+  card and in the popup list, and are included in backups.
+
+### Changed
+
+- Dashboard on phones: the card actions (Open, History, Alert, Check,
+  Remove) are now a single row of icon-over-label buttons.
+
 ## [0.5.0] — 2026-10-17
 
 ### Added

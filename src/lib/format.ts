@@ -1,5 +1,6 @@
 // Display helpers shared by the popup, details page and notifications.
-import { extractCurrencySnippet, hasCurrencyMarker } from './price.js';
+import { cleanNumber, extractCurrencySnippet, hasCurrencyMarker } from './price.js';
+import { sanitizeAlert } from './tracking.js';
 import type { HistoryEntry, TrackedItem } from './types.js';
 
 const numberFormats = new Map<string, Intl.NumberFormat>();
@@ -45,6 +46,42 @@ export function formatPrice(
 
 export function formatItemPrice(item: Pick<TrackedItem, 'lastPrice' | 'currency' | 'lastRaw'>): string {
   return formatPrice(item.lastPrice, item.currency, item.lastRaw);
+}
+
+// "below €99.00", "above €150.00", "below €80.00 or above €120.00"; null
+// without an alert.
+export function formatAlert(item: Pick<TrackedItem, 'alert' | 'currency'>): string | null {
+  const alert = sanitizeAlert(item.alert);
+  if (!alert) return null;
+  const parts: string[] = [];
+  if (alert.below != null) parts.push(`below ${formatPrice(alert.below, item.currency)}`);
+  if (alert.above != null) parts.push(`above ${formatPrice(alert.above, item.currency)}`);
+  return parts.join(' or ');
+}
+
+// The symbol shown next to a price input ("€", "CHF"), or '' when unknown.
+export function currencySymbol(currency: string | null | undefined): string {
+  if (!currency) return '';
+  const fmt = numberFormat(currency, null);
+  return fmt?.formatToParts(0).find(p => p.type === 'currency')?.value ?? '';
+}
+
+// A price as the user typed it: "89.99", "89,99", "1 299", "€89". null for
+// an empty field, 'invalid' for anything that isn't a positive price.
+export function parsePriceInput(text: string): number | null | 'invalid' {
+  const s = text.trim();
+  if (!s) return null;
+  // Digits and separators, with at most a short currency marker either side.
+  // No minus signs: "-5" is not a price.
+  if (!/^[^\d\-−]{0,4}\d[\d\s.,'’]*[^\d\-−]{0,4}$/u.test(s)) return 'invalid';
+  const value = cleanNumber(s);
+  return value != null && value > 0 ? value : 'invalid';
+}
+
+// Pre-fills a price input. Plain digits with a dot read back unchanged
+// through parsePriceInput in every locale.
+export function priceInputValue(value: number | null | undefined): string {
+  return finite(value) ? String(Math.round(value * 100) / 100) : '';
 }
 
 export interface PriceChange {

@@ -19,7 +19,10 @@ import {
   HISTORY_LIMIT,
   applyHit,
   commitPrice,
-  sanitizeImported
+  notifyReason,
+  sanitizeAlert,
+  sanitizeImported,
+  type NotifyReason
 } from './lib/tracking.js';
 import { cleanUrl, isWebUrl, productKey, siteName } from './lib/url.js';
 import type {
@@ -31,6 +34,7 @@ import type {
   PriceHit,
   RunCheckMessage,
   RunCheckResponse,
+  SetAlertMessage,
   TrackedItem,
   VisitUpdateMessage
 } from './lib/types.js';
@@ -118,18 +122,20 @@ async function clearBadge(): Promise<void> {
   await setBadge(0);
 }
 
-function notifyPriceChange(item: TrackedItem, prev: number, prevRaw: string): void {
+function notifyPriceChange(item: TrackedItem, prev: number, prevRaw: string, reason: NotifyReason): void {
   const next = item.lastPrice as number;
   const title = cleanTitle(item.title, siteName(item.url)) || item.url;
   const from = formatPrice(prev, item.currency, prevRaw);
   const to = formatPrice(next, item.currency, item.lastRaw);
   const arrow = next < prev ? '▼' : '▲';
   const pct = prev > 0 ? ` (${formatPct(((next - prev) / prev) * 100)})` : '';
+  const target = reason === 'change' ? null : item.alert?.[reason];
+  const why = target != null ? ` · reached your ${formatPrice(target, item.currency)} alert` : '';
   browser.notifications.create(`${NOTIFY_PREFIX}${item.url}`, {
     type: 'basic',
     iconUrl: browser.runtime.getURL('icons/icon-128.png'),
     title: `${arrow} ${to}${pct}`,
-    message: `${title}\nwas ${from}`
+    message: `${title}\nwas ${from}${why}`
   });
 }
 
@@ -269,7 +275,7 @@ async function doCheck(options: CheckOptions): Promise<RunCheckResponse> {
   let changed = 0;
   let failed = 0;
   let needsConfirm = false;
-  const notifications: Array<{ item: TrackedItem; prev: number; prevRaw: string }> = [];
+  const notifications: Array<{ item: TrackedItem; prev: number; prevRaw: string; reason: NotifyReason }> = [];
   await withTracked(fresh => {
     const now = Date.now();
     for (const item of fresh) {
@@ -289,14 +295,14 @@ async function doCheck(options: CheckOptions): Promise<RunCheckResponse> {
       if (result.pending) needsConfirm = true;
       if (result.changed) changed++;
       if (result.notify) {
-        const dropped = (item.lastPrice as number) < result.notify.prev;
-        if (notifyOn === 'any' || dropped) notifications.push({ item, ...result.notify });
+        const reason = notifyReason(item, result.notify.prev, item.lastPrice as number, notifyOn);
+        if (reason) notifications.push({ item, ...result.notify, reason });
       }
     }
   });
 
   for (const n of notifications) {
-    notifyPriceChange(n.item, n.prev, n.prevRaw);
+    notifyPriceChange(n.item, n.prev, n.prevRaw, n.reason);
     await incrementBadge();
   }
   if (needsConfirm) await scheduleConfirm();
@@ -376,6 +382,20 @@ async function visitUpdate(msg: VisitUpdateMessage): Promise<void> {
   if (needsConfirm) await scheduleConfirm();
 }
 
+// alert: null removes it. Returns false for an unknown item or an invalid
+// alert (the dashboard validates first, so that is a stale page).
+async function setAlert(msg: SetAlertMessage): Promise<boolean> {
+  const alert = msg.alert == null ? null : sanitizeAlert(msg.alert);
+  if (msg.alert != null && !alert) return false;
+  return withTracked(list => {
+    const item = findByUrl(list, msg.url);
+    if (!item) return false;
+    if (alert) item.alert = alert;
+    else delete item.alert;
+    return true;
+  });
+}
+
 async function importItems(items: unknown[]): Promise<ImportResponse> {
   const result: ImportResponse = { added: 0, updated: 0, skipped: 0 };
   await withTracked(list => {
@@ -385,11 +405,16 @@ async function importItems(items: unknown[]): Promise<ImportResponse> {
       const existing = findByUrl(list, item.url);
       if (!existing) { list.push(item); result.added++; continue; }
       // Merge history so a backup restores older data without losing newer.
+      // An alert set on this device wins over the backup's.
       const seen = new Set((existing.history ?? []).map(h => h.ts));
       const extra = item.history.filter(h => !seen.has(h.ts));
-      if (!extra.length) { result.skipped++; continue; }
-      existing.history = [...(existing.history ?? []), ...extra].sort((a, b) => a.ts - b.ts).slice(-HISTORY_LIMIT);
-      existing.addedAt = Math.min(existing.addedAt ?? Infinity, item.addedAt ?? Infinity, existing.history[0]?.ts ?? Infinity);
+      const takeAlert = !sanitizeAlert(existing.alert) && !!item.alert;
+      if (!extra.length && !takeAlert) { result.skipped++; continue; }
+      if (extra.length) {
+        existing.history = [...(existing.history ?? []), ...extra].sort((a, b) => a.ts - b.ts).slice(-HISTORY_LIMIT);
+        existing.addedAt = Math.min(existing.addedAt ?? Infinity, item.addedAt ?? Infinity, existing.history[0]?.ts ?? Infinity);
+      }
+      if (takeAlert) existing.alert = item.alert;
       result.updated++;
     }
   });
@@ -547,6 +572,8 @@ browser.runtime.onMessage.addListener(async (msg: Message) => {
       return { ok: true };
     case 'importItems':
       return importItems(Array.isArray(msg.items) ? msg.items : []);
+    case 'setAlert':
+      return { saved: await setAlert(msg) };
     default:
       return;
   }
