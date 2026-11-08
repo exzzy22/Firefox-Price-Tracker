@@ -58,7 +58,21 @@ export interface TrackedItem {
   // upgrade may only reflect the improved detector (e.g. the shown price
   // instead of the cheapest variant), so it is recorded without notifying.
   quietNextChange?: boolean;
+  // Target prices set by the user. Absent (or null) means no alert.
+  alert?: PriceAlert | null;
 }
+
+// Per-item price alert. While one is set it replaces the global `notifyOn`
+// filter for that item (see notifyReason in src/lib/tracking.ts). At least
+// one bound is set, and below < above when both are.
+export interface PriceAlert {
+  // Notify when the price falls to this value or lower.
+  below: number | null;
+  // Notify when the price rises to this value or higher.
+  above: number | null;
+}
+
+export type AlertSide = 'below' | 'above';
 
 export interface LastDetected {
   url: string;
@@ -117,6 +131,8 @@ export interface VisitUpdateMessage {
   image?: string | null;
 }
 export interface ImportItemsMessage { action: 'importItems'; items: unknown[]; }
+// alert: null removes the item's alert.
+export interface SetAlertMessage { action: 'setAlert'; url: string; alert: PriceAlert | null; }
 
 export type Message =
   | GetPriceMessage
@@ -128,7 +144,8 @@ export type Message =
   | TrackItemMessage
   | RemoveItemMessage
   | VisitUpdateMessage
-  | ImportItemsMessage;
+  | ImportItemsMessage
+  | SetAlertMessage;
 
 export interface GetPriceResponse {
   price?: number;

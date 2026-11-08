@@ -1,19 +1,23 @@
 import {
   changeSinceAdded,
   cleanTitle,
+  currencySymbol,
+  formatAlert,
   formatItemPrice,
   formatPct,
   formatPrice,
   formatTimestamp,
   lastChange,
+  parsePriceInput,
+  priceInputValue,
   priceRange,
   relativeTime
 } from './lib/format.js';
 import { h, historyChart, icon, sparkline } from './lib/dom.js';
 import { siteName } from './lib/url.js';
-import type { ImportResponse, NotifyOn, RunCheckResponse, TrackedItem } from './lib/types.js';
+import type { AlertSide, ImportResponse, NotifyOn, PriceAlert, RunCheckResponse, TrackedItem } from './lib/types.js';
 
-import { FAIL_WARN_THRESHOLD } from './lib/tracking.js';
+import { FAIL_WARN_THRESHOLD, alertMatch, sanitizeAlert } from './lib/tracking.js';
 const DEFAULT_INTERVAL_MINUTES = 60;
 const INTERVAL_PRESETS = [15, 30, 60, 120, 240, 360, 720, 1440];
 
@@ -30,6 +34,10 @@ let lastRunAt: number | null = null;
 let query = '';
 let sortKey: SortKey = 'added';
 const openHistory = new Set<string>();
+const openAlerts = new Set<string>();
+// What the user has typed into an open alert form. Kept outside the DOM so
+// a re-render (storage changes arrive at any time) doesn't wipe it.
+const alertDrafts = new Map<string, Record<AlertSide, string>>();
 let statusTimer: ReturnType<typeof setTimeout> | null = null;
 
 function setStatus(text: string, timeoutMs = 5000): void {
@@ -166,6 +174,91 @@ function renderHistory(item: TrackedItem, panel: HTMLElement): void {
     h('ol', { className: 'history-list' }, ...rows));
 }
 
+function toggleAlert(item: TrackedItem): void {
+  if (openAlerts.has(item.url)) {
+    openAlerts.delete(item.url);
+    alertDrafts.delete(item.url);
+    renderList();
+    return;
+  }
+  openAlerts.add(item.url);
+  renderList();
+  focusInput(`${item.url}|below`);
+}
+
+function alertSavedMessage(item: TrackedItem, alert: PriceAlert): string {
+  const fmt = (n: number | null) => formatPrice(n, item.currency);
+  const side = alertMatch(alert, item.lastPrice);
+  if (side === 'below') return `Alert saved. It’s already at or below ${fmt(alert.below)}, so you’ll be notified when it drops further.`;
+  if (side === 'above') return `Alert saved. It’s already at or above ${fmt(alert.above)}, so you’ll be notified when it rises further.`;
+  return `Alert saved. You’ll be notified when the price goes ${formatAlert({ alert, currency: item.currency })}.`;
+}
+
+async function saveAlert(item: TrackedItem, alert: PriceAlert | null): Promise<void> {
+  const res = await browser.runtime.sendMessage({ action: 'setAlert', url: item.url, alert }) as { saved?: boolean } | undefined;
+  if (!res?.saved) {
+    setStatus('Could not save the alert');
+    return;
+  }
+  openAlerts.delete(item.url);
+  alertDrafts.delete(item.url);
+  renderList();
+  setStatus(alert ? alertSavedMessage(item, alert) : 'Alert removed', 8000);
+}
+
+function renderAlertPanel(item: TrackedItem): HTMLFormElement {
+  let draft = alertDrafts.get(item.url);
+  if (!draft) {
+    draft = { below: priceInputValue(item.alert?.below), above: priceInputValue(item.alert?.above) };
+    alertDrafts.set(item.url, draft);
+  }
+  const values = draft;
+  const symbol = currencySymbol(item.currency);
+  const error = h('p', { className: 'field-error', role: 'alert', hidden: true });
+  const fail = (text: string) => { error.textContent = text; error.hidden = false; };
+
+  const field = (side: AlertSide, label: string) => {
+    const input = h('input', {
+      className: 'input', type: 'text', inputmode: 'decimal', autocomplete: 'off',
+      placeholder: 'Not set', value: values[side], 'data-focus-key': `${item.url}|${side}`
+    });
+    input.addEventListener('input', () => { values[side] = input.value; error.hidden = true; });
+    return h('label', { className: 'field' },
+      h('span', { className: 'field-label' }, label),
+      h('span', { className: 'price-input' }, input,
+        symbol ? h('span', { className: 'price-input-symbol', 'aria-hidden': 'true' }, symbol) : null));
+  };
+
+  const removeBtn = item.alert
+    ? h('button', { type: 'button', className: 'btn btn-secondary' }, 'Remove alert')
+    : null;
+  removeBtn?.addEventListener('click', () => { saveAlert(item, null).catch(() => setStatus('Could not remove the alert')); });
+
+  const form = h('form', { className: 'alert-panel', novalidate: true },
+    h('div', { className: 'alert-title' }, icon('bell', 14), 'Notify me when the price'),
+    h('div', { className: 'alert-fields' }, field('below', 'drops to or below'), field('above', 'rises to or above')),
+    error,
+    h('div', { className: 'alert-foot' },
+      h('p', { className: 'hint' }, 'Leave either one empty. While an alert is set, other price changes don’t notify.'),
+      h('div', { className: 'alert-buttons' }, removeBtn, h('button', { type: 'submit', className: 'btn btn-primary' }, 'Save alert'))));
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const below = parsePriceInput(values.below);
+    const above = parsePriceInput(values.above);
+    if (below === 'invalid' || above === 'invalid') return fail('Enter a price such as 89.99.');
+    if (below == null && above == null) {
+      if (item.alert) saveAlert(item, null).catch(() => setStatus('Could not remove the alert'));
+      else fail('Enter a price in at least one field.');
+      return;
+    }
+    const alert = sanitizeAlert({ below, above });
+    if (!alert) return fail('The “drops to” price has to be lower than the “rises to” price.');
+    saveAlert(item, alert).catch(() => setStatus('Could not save the alert'));
+  });
+  return form;
+}
+
 function renderCard(item: TrackedItem): HTMLElement {
   const site = siteName(item.url);
   const title = displayTitle(item);
@@ -184,6 +277,14 @@ function renderCard(item: TrackedItem): HTMLElement {
     meta.push(h('span', {}, `Low ${formatPrice(range.min, item.currency)} · High ${formatPrice(range.max, item.currency)}`));
   }
   if (since) meta.push(h('span', {}, 'Since added ', badge(since.pct)));
+  const alertText = formatAlert(item);
+  if (alertText) {
+    const reached = alertMatch(item.alert, item.lastPrice);
+    meta.push(h('span', {
+      className: `chip chip-alert${reached ? ` is-${reached}` : ''}`,
+      title: reached ? 'The price has reached your alert' : 'Price alert'
+    }, icon('bell', 12), `Alert ${alertText}`));
+  }
 
   const notices: HTMLElement[] = [];
   if (failing) {
@@ -210,6 +311,13 @@ function renderCard(item: TrackedItem): HTMLElement {
   openBtn.addEventListener('click', () => { openTab(item.url).catch(() => { /* ignore */ }); });
   const checkBtn = h('button', { className: 'btn btn-ghost' }, icon('refresh', 15), 'Check');
   checkBtn.addEventListener('click', () => { checkOne(item, checkBtn).catch(() => setStatus('Check failed')); });
+  const alertOpen = openAlerts.has(item.url);
+  const alertBtn = h('button', {
+    className: `btn btn-ghost${alertText ? ' is-active' : ''}`,
+    'aria-expanded': String(alertOpen),
+    title: alertText ? `Alert ${alertText}` : 'Get notified at a target price'
+  }, icon('bell', 15), 'Alert');
+  alertBtn.addEventListener('click', () => toggleAlert(item));
 
   const spark = sparkline(item.history ?? [], trend);
 
@@ -224,8 +332,9 @@ function renderCard(item: TrackedItem): HTMLElement {
       h('div', { className: 'card-meta' }, ...meta),
       ...notices,
       h('div', { className: 'card-foot' },
-        h('div', { className: 'item-actions' }, openBtn, histBtn, checkBtn, removeButton(item)),
+        h('div', { className: 'item-actions' }, openBtn, histBtn, alertBtn, checkBtn, removeButton(item)),
         spark ? h('div', { className: 'card-spark' }, spark) : null),
+      alertOpen ? renderAlertPanel(item) : null,
       historyPanel));
 }
 
@@ -244,7 +353,25 @@ function renderStats(): void {
     : 'Nothing tracked yet';
 }
 
+function focusInput(key: string, caret?: { start: number | null; end: number | null }): void {
+  const input = Array.from(document.querySelectorAll<HTMLInputElement>('input[data-focus-key]'))
+    .find(el => el.dataset.focusKey === key);
+  if (!input) return;
+  input.focus();
+  if (caret) input.setSelectionRange(caret.start, caret.end);
+}
+
+// Re-rendering replaces the alert inputs; keep focus and caret where the
+// user left them.
 function renderList(): void {
+  const active = document.activeElement;
+  const key = active instanceof HTMLInputElement ? active.dataset.focusKey : undefined;
+  const caret = key ? { start: (active as HTMLInputElement).selectionStart, end: (active as HTMLInputElement).selectionEnd } : undefined;
+  renderListContent();
+  if (key) focusInput(key, caret);
+}
+
+function renderListContent(): void {
   renderStats();
   const container = $('list');
   if (!tracked.length) {

@@ -30,6 +30,8 @@ https://addons.mozilla.org/en-US/firefox/addon/firefox-price-tracker/
 - Background checks every 15 minutes to 24 hours (default: hourly). Notify
   on every change or only on drops. Pages the background can't read are
   flagged with the reason.
+- Price alerts per product: get notified only when the price drops to or
+  below a target, rises to or above one, or either.
 - Dashboard with search, sorting, price-change badges, low/high, sparklines
   and a full price history chart per item.
 - Export / import a JSON backup (storage is local to each browser).

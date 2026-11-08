@@ -2,7 +2,7 @@
 // import validation. Kept free of browser APIs so it can be unit-tested.
 import { hasCurrencyMarker, normalizeCurrencyCode } from './price.js';
 import { isWebUrl } from './url.js';
-import type { HistoryEntry, TrackedItem } from './types.js';
+import type { AlertSide, HistoryEntry, NotifyOn, PriceAlert, TrackedItem } from './types.js';
 
 export const HISTORY_LIMIT = 200;
 // Prices are compared at display precision; HSN-style "19.701001" vs
@@ -87,6 +87,46 @@ export function applyHit(
   return { ...none, pending: true };
 }
 
+// Bounds must be positive prices, and with both set below must be under
+// above (otherwise every price would match one side). Returns null when
+// nothing valid is left.
+export function sanitizeAlert(raw: unknown): PriceAlert | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const bound = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+  const below = bound(o.below);
+  const above = bound(o.above);
+  if (below == null && above == null) return null;
+  if (below != null && above != null && above - below < PRICE_EPSILON) return null;
+  return { below, above };
+}
+
+// Which side of the alert `price` is on, at cent precision ("at or below",
+// "at or above"), or null when it is between the bounds / there is no alert.
+export function alertMatch(alert: unknown, price: number | null | undefined): AlertSide | null {
+  const a = sanitizeAlert(alert);
+  if (!a || typeof price !== 'number' || !Number.isFinite(price)) return null;
+  if (a.below != null && price < a.below + PRICE_EPSILON) return 'below';
+  if (a.above != null && price > a.above - PRICE_EPSILON) return 'above';
+  return null;
+}
+
+export type NotifyReason = 'change' | AlertSide;
+
+// Whether a confirmed change from `prev` to `next` notifies, and why.
+// Without an alert the global setting decides. An alert replaces it: it
+// fires when the price reaches the target, and again on every further move
+// past it (cheaper still, or pricier still), but not when the price moves
+// back toward or out of the range.
+export function notifyReason(item: Pick<TrackedItem, 'alert'>, prev: number, next: number, notifyOn: NotifyOn): NotifyReason | null {
+  const alert = sanitizeAlert(item.alert);
+  if (!alert) return notifyOn === 'any' || next < prev ? 'change' : null;
+  const side = alertMatch(alert, next);
+  if (side === 'below') return alertMatch(alert, prev) !== 'below' || next < prev ? 'below' : null;
+  if (side === 'above') return alertMatch(alert, prev) !== 'above' || next > prev ? 'above' : null;
+  return null;
+}
+
 export function sanitizeImported(raw: unknown): TrackedItem | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
@@ -101,7 +141,9 @@ export function sanitizeImported(raw: unknown): TrackedItem | null {
     : [];
   const now = Date.now();
   const image = typeof o.image === 'string' && isWebUrl(o.image) ? o.image : null;
+  const alert = sanitizeAlert(o.alert);
   return {
+    ...(alert ? { alert } : {}),
     url: o.url,
     title: str(o.title) || o.url,
     lastPrice: num(o.lastPrice),

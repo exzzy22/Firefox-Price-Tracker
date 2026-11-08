@@ -1,9 +1,9 @@
-import { cleanTitle, formatItemPrice, formatPct, formatPrice, lastChange, relativeTime } from './lib/format.js';
+import { cleanTitle, formatAlert, formatItemPrice, formatPct, formatPrice, lastChange, relativeTime } from './lib/format.js';
 import { h, icon } from './lib/dom.js';
 import { isWebUrl, productKey, siteName } from './lib/url.js';
 import type { GetPriceResponse, LastDetected, RunCheckResponse, TrackedItem } from './lib/types.js';
 
-import { FAIL_WARN_THRESHOLD } from './lib/tracking.js';
+import { FAIL_WARN_THRESHOLD, alertMatch } from './lib/tracking.js';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -198,7 +198,13 @@ function itemMeta(item: TrackedItem): HTMLElement {
     return h('div', { className: 'item-meta is-pending' }, icon('clock', 13),
       `Confirming ${formatPrice(item.pending.price, item.pending.currency ?? item.currency, item.pending.raw)}…`);
   }
-  return h('div', { className: 'item-meta' }, `${siteName(item.url)} · ${relativeTime(item.lastChecked || item.updatedAt, Date.now(), 'short')}`);
+  const alertText = formatAlert(item);
+  const reached = alertMatch(item.alert, item.lastPrice);
+  return h('div', { className: 'item-meta' }, `${siteName(item.url)} · ${relativeTime(item.lastChecked || item.updatedAt, Date.now(), 'short')}`,
+    alertText
+      ? h('span', { className: `item-alert${reached ? ` is-${reached}` : ''}`, title: `Alert ${alertText}` },
+        icon('bell', 11), h('span', { className: 'item-alert-text' }, alertText))
+      : null);
 }
 
 // Two-step remove; kept outside the DOM so list re-renders don't reset it.
